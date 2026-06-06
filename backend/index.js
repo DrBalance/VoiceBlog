@@ -1,0 +1,40 @@
+require('dotenv').config();
+const express = require('express');
+const cors = require('cors');
+
+const transcribeRouter = require('./routes/transcribe');
+const generateRouter = require('./routes/generate');
+const imagesRouter = require('./routes/images');
+const generationsRouter = require('./routes/generations');
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+app.use(cors({
+  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+  credentials: true,
+}));
+app.use(express.json());
+
+// 헬스체크
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// 라우터
+app.use('/api/transcribe', transcribeRouter);
+app.use('/api/generate', generateRouter);
+app.use('/api/generate', imagesRouter);
+app.use('/api/generations', generationsRouter);
+
+// 에러 핸들러
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(err.status || 500).json({
+    error: err.message || '서버 오류가 발생했습니다.',
+  });
+});
+
+app.listen(PORT, () => {
+  console.log(`Voice Blog 서버 실행 중: http://localhost:${PORT}`);
+});
