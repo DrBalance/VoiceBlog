@@ -27,6 +27,9 @@ app.use(cors({
   credentials: true,
 }));
 
+app.use(express.json()); 
+app.use(express.urlencoded({ extended: true })); 
+
 // 헬스체크
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
