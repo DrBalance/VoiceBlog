@@ -31,7 +31,7 @@ async function generateImages(blogContent, count = 3) {
         prompt,
         n: 1,
         size: '1536x1024',
-        quality: 'standard',
+        quality: 'medium',
       });
 
       // gpt-image-1은 base64로 반환
