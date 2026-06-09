@@ -14,7 +14,7 @@ async function searchImages(blogContent, count = 3) {
   const keyword = titleMatch ? titleMatch[1].slice(0, 30) : 'lifestyle blog';
 
   const response = await fetch(
-    `${UNSPLASH_API}/photos/random?query=${encodeURIComponent(keyword)}&count=${count}&orientation=landscape`,
+    `${UNSPLASH_API}/search/photos?query=${encodeURIComponent(keyword)}&per_page=${count}&orientation=landscape`,
     {
       headers: {
         Authorization: `Client-ID ${process.env.UNSPLASH_ACCESS_KEY}`,
@@ -23,10 +23,16 @@ async function searchImages(blogContent, count = 3) {
   );
 
   if (!response.ok) {
-    throw new Error(`Unsplash API 오류: ${response.status}`);
+    const errText = await response.text();
+    throw new Error(`Unsplash API 오류: ${response.status} - ${errText}`);
   }
 
-  const photos = await response.json();
+  const data = await response.json();
+  const photos = data.results || [];
+
+  if (photos.length === 0) {
+    throw new Error('Unsplash 검색 결과가 없습니다.');
+  }
 
   return photos.map((photo, i) => ({
     url: photo.urls.regular,
