@@ -12,8 +12,8 @@ const upload = multer({
   dest: '/tmp/voice-blog/',
   limits: { fileSize: 25 * 1024 * 1024 }, // 25MB (Whisper 제한)
   fileFilter: (req, file, cb) => {
-    const allowed = ['audio/mpeg', 'audio/mp4', 'audio/wav', 'audio/webm', 'audio/ogg', 'audio/m4a'];
-    if (allowed.includes(file.mimetype) || file.originalname.match(/\.(mp3|mp4|wav|webm|ogg|m4a)$/i)) {
+    const allowed = ['audio/mpeg', 'audio/mp4', 'audio/wav', 'audio/webm', 'audio/ogg', 'audio/m4a', 'audio/flac'];
+    if (allowed.includes(file.mimetype) || file.originalname.match(/\.(mp3|mp4|wav|webm|ogg|m4a|flac|mpeg|mpga)$/i)) {
       cb(null, true);
     } else {
       cb(new Error('지원하지 않는 파일 형식입니다.'));
@@ -30,7 +30,7 @@ router.post('/', authMiddleware, upload.single('audio'), async (req, res, next) 
   const tempPath = req.file.path;
 
   try {
-    const transcript = await transcribeAudio(tempPath, req.file.mimetype);
+    const transcript = await transcribeAudio(tempPath, req.file.mimetype, req.file.originalname);
     res.json({ transcript });
   } catch (err) {
     next(err);
