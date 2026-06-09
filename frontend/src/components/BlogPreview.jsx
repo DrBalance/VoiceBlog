@@ -42,21 +42,94 @@ const styles = {
     opacity: show ? 1 : 0, transition: 'opacity 0.3s', pointerEvents: 'none',
     zIndex: 999,
   }),
+  stepBox: {
+    padding: '16px 20px', borderRadius: '12px',
+    background: 'var(--accent-dim)', border: '1px solid var(--accent)',
+    display: 'flex', flexDirection: 'column', gap: '12px',
+  },
+  stepTitle: { fontSize: '0.9rem', fontWeight: 600, color: 'var(--accent)' },
+  stepDesc: { fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: 1.6 },
+  stepBtnRow: { display: 'flex', gap: '8px', alignItems: 'center' },
+  progressDots: { display: 'flex', gap: '6px' },
+  dot: (active, done) => ({
+    width: '8px', height: '8px', borderRadius: '50%',
+    background: done ? 'var(--accent)' : active ? 'var(--accent)' : 'var(--border)',
+    opacity: done ? 1 : active ? 1 : 0.4,
+  }),
+}
+
+// 마크다운을 IMAGE_PLACEHOLDER 기준으로 구간 분할
+function splitMarkdownByImages(markdown, images) {
+  const placeholderPattern = /!\[[^\]]*\]\(IMAGE_PLACEHOLDER_(\d+)\)/g
+  const parts = []
+  let lastIndex = 0
+  let match
+
+  while ((match = placeholderPattern.exec(markdown)) !== null) {
+    const imgIndex = parseInt(match[1]) - 1
+    const textBefore = markdown.slice(lastIndex, match.index)
+    parts.push({ text: textBefore, image: images[imgIndex] || null, imageIndex: imgIndex + 1 })
+    lastIndex = match.index + match[0].length
+  }
+
+  // 마지막 텍스트 구간
+  const remaining = markdown.slice(lastIndex)
+  if (remaining.trim()) {
+    parts.push({ text: remaining, image: null, imageIndex: null })
+  }
+
+  return parts
+}
+
+// 구간 HTML 변환 (네이버용)
+function sectionToNaverHtml(section) {
+  let html = section.text
+
+  // 제목 변환
+  html = html.replace(/^### (.+)$/gm, '<p><span style="font-size:1.1em;font-weight:bold;">$1</span></p>')
+  html = html.replace(/^## (.+)$/gm, '<p><span style="font-size:1.3em;font-weight:bold;">$1</span></p>')
+  html = html.replace(/^# (.+)$/gm, '<p><span style="font-size:1.6em;font-weight:bold;">$1</span></p>')
+  html = html.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+  html = html.replace(/\*(.+?)\*/g, '<em>$1</em>')
+  html = html.replace(/`([^`]+)`/g, '<code style="background:#f4f4f4;padding:2px 6px;border-radius:3px;font-size:0.9em;">$1</code>')
+  html = html.replace(/\n\n/g, '<br><br>')
+  html = html.replace(/\n/g, '<br>')
+
+  // 이미지 추가
+  if (section.image && (section.image.permanentUrl || section.image.url)) {
+    const imgSrc = section.image.permanentUrl || section.image.url
+    const imgAlt = section.image.description || ''
+    html += `<img src="${imgSrc}" alt="${imgAlt}" style="max-width:100%;margin:16px 0;" />`
+  }
+
+  return html
 }
 
 export default function BlogPreview({ markdown, images = [] }) {
   const [tab, setTab] = useState('preview')
-  const [toast, setToast] = useState(false)
+  const [toast, setToast] = useState('')
+  const [naverStep, setNaverStep] = useState(0) // 0 = 아직 시작 안함
 
-  function showToast() {
-    setToast(true)
-    setTimeout(() => setToast(false), 2000)
+  function showToast(msg = '✓ 클립보드에 복사됐습니다') {
+    setToast(msg)
+    setTimeout(() => setToast(''), 2500)
   }
 
-  async function handleCopyNaver() {
-    const html = markdownToNaver(markdown, images)
+  // 순차 복사용 구간 분할
+  const sections = splitMarkdownByImages(markdown, images)
+  const totalSteps = sections.length
+
+  async function handleNaverStep(stepIndex) {
+    const section = sections[stepIndex]
+    const html = sectionToNaverHtml(section)
     await copyToClipboard(html)
-    showToast()
+    showToast(`✓ ${stepIndex + 1}/${totalSteps} 복사됐습니다. 네이버에 붙여넣기 하세요!`)
+    setNaverStep(stepIndex + 1)
+  }
+
+  function handleNaverReset() {
+    setNaverStep(0)
   }
 
   async function handleCopyTistory() {
@@ -69,7 +142,6 @@ export default function BlogPreview({ markdown, images = [] }) {
     const zip = new JSZip()
     zip.file('post.md', markdown)
 
-    // 이미지 다운로드
     await Promise.all(images.map(async (img, i) => {
       if (!img.permanentUrl && !img.url) return
       try {
@@ -134,11 +206,72 @@ export default function BlogPreview({ markdown, images = [] }) {
         </div>
       )}
 
-      {/* 액션 버튼 */}
+      {/* 네이버 순차 붙여넣기 UI */}
+      {images.length > 0 && (
+        <div style={styles.stepBox}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={styles.stepTitle}>
+              📋 네이버 블로그 순차 붙여넣기
+            </span>
+            <div style={styles.progressDots}>
+              {sections.map((_, i) => (
+                <div key={i} style={styles.dot(i === naverStep, i < naverStep)} />
+              ))}
+            </div>
+          </div>
+
+          {naverStep < totalSteps ? (
+            <>
+              <div style={styles.stepDesc}>
+                {naverStep === 0
+                  ? `총 ${totalSteps}단계로 나눠서 붙여넣기합니다. 각 단계마다 복사 후 네이버에 붙여넣기 하세요.`
+                  : `${naverStep}/${totalSteps} 완료! 네이버에 붙여넣기 후 다음 단계를 눌러주세요.`
+                }
+                {sections[naverStep]?.image && (
+                  <span style={{ color: 'var(--accent)', display: 'block', marginTop: '4px' }}>
+                    ✦ 이미지 {sections[naverStep].imageIndex} 포함
+                  </span>
+                )}
+              </div>
+              <div style={styles.stepBtnRow}>
+                <button style={styles.btn('primary')} onClick={() => handleNaverStep(naverStep)}>
+                  {naverStep === 0 ? '1단계 복사 시작' : `${naverStep + 1}단계 복사`}
+                </button>
+                {naverStep > 0 && (
+                  <button style={styles.btn()} onClick={handleNaverReset}>
+                    처음부터
+                  </button>
+                )}
+              </div>
+            </>
+          ) : (
+            <>
+              <div style={styles.stepDesc}>
+                🎉 모든 단계 완료! 네이버 블로그에 글과 이미지가 모두 삽입됐습니다.
+              </div>
+              <button style={styles.btn()} onClick={handleNaverReset}>
+                처음부터 다시
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* 이미지 없을 때 기존 네이버 버튼 */}
+      {images.length === 0 && (
+        <div style={styles.btnRow}>
+          <button style={styles.btn('primary')} onClick={async () => {
+            const html = markdownToNaver(markdown, [])
+            await copyToClipboard(html)
+            showToast()
+          }}>
+            📋 네이버 블로그에 붙여넣기
+          </button>
+        </div>
+      )}
+
+      {/* 공통 버튼 */}
       <div style={styles.btnRow}>
-        <button style={styles.btn('primary')} onClick={handleCopyNaver}>
-          📋 네이버 블로그에 붙여넣기
-        </button>
         <button style={styles.btn()} onClick={handleCopyTistory}>
           📋 티스토리에 붙여넣기
         </button>
@@ -147,18 +280,7 @@ export default function BlogPreview({ markdown, images = [] }) {
         </button>
       </div>
 
-      {/* 네이버 이미지 안내 */}
-      {images.length > 0 && (
-        <div style={{
-          padding: '12px 16px', borderRadius: '8px',
-          background: 'var(--accent-dim)', border: '1px solid var(--accent)',
-          fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: 1.6,
-        }}>
-          💡 네이버 블로그: 텍스트 붙여넣기 후, 이미지 탭에서 번호 순서대로 해당 위치에 업로드하세요.
-        </div>
-      )}
-
-      <div style={styles.toast(toast)}>✓ 클립보드에 복사됐습니다</div>
+      <div style={styles.toast(!!toast)}>{toast}</div>
     </div>
   )
 }
