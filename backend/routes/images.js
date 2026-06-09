@@ -6,6 +6,12 @@ const { searchImages } = require('../services/unsplash');
 
 const router = express.Router();
 
+// base64 data URL → Buffer 변환
+function base64ToBuffer(dataUrl) {
+  const base64 = dataUrl.replace(/^data:image\/\w+;base64,/, '');
+  return Buffer.from(base64, 'base64');
+}
+
 // POST /api/generate/images
 router.post('/images', authMiddleware, async (req, res, next) => {
   const { generationId, markdown, imageCount = 3, imageSource = 'dalle' } = req.body;
@@ -29,9 +35,17 @@ router.post('/images', authMiddleware, async (req, res, next) => {
         if (!img.url) return img;
 
         try {
-          const response = await fetch(img.url);
-          const buffer = await response.buffer();
+          let buffer;
           const storagePath = `generations/${req.user.id}/${generationId}/${img.index}.jpg`;
+
+          // base64 data URL인 경우 직접 변환
+          if (img.url.startsWith('data:')) {
+            buffer = base64ToBuffer(img.url);
+          } else {
+            // 외부 URL인 경우 fetch로 다운로드
+            const response = await fetch(img.url);
+            buffer = await response.buffer();
+          }
 
           const { error: uploadError } = await supabase.storage
             .from('blog-images')
@@ -50,6 +64,7 @@ router.post('/images', authMiddleware, async (req, res, next) => {
             ...img,
             storagePath,
             permanentUrl: publicUrl.publicUrl,
+            url: publicUrl.publicUrl, // URL도 영구 URL로 교체
           };
         } catch (err) {
           console.error(`이미지 ${img.index} 업로드 오류:`, err.message);
