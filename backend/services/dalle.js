@@ -3,7 +3,7 @@ const OpenAI = require('openai');
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 /**
- * 블로그 내용 기반으로 이미지 프롬프트 생성 후 DALL·E로 이미지 생성
+ * 블로그 내용 기반으로 이미지 프롬프트 생성 후 GPT Image로 이미지 생성
  * @param {string} blogContent - 블로그 Markdown 내용
  * @param {number} count - 생성할 이미지 수
  * @returns {Promise<Array<{url, description}>>}
@@ -27,15 +27,19 @@ async function generateImages(blogContent, count = 3) {
 
     try {
       const response = await openai.images.generate({
-        model: 'dall-e-3',
+        model: 'gpt-image-1',
         prompt,
         n: 1,
-        size: '1792x1024',
+        size: '1536x1024',
         quality: 'standard',
       });
 
+      // gpt-image-1은 base64로 반환
+      const b64 = response.data[0].b64_json;
+      const dataUrl = `data:image/png;base64,${b64}`;
+
       results.push({
-        url: response.data[0].url,
+        url: dataUrl,
         description,
         index: i + 1,
       });
