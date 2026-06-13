@@ -1,6 +1,6 @@
 const express = require('express');
 const { authMiddleware, supabase } = require('../middleware/auth');
-const { generateBlogPost } = require('../services/claude');
+const { generateBlogPost, generateHashtags } = require('../services/claude');
 
 const router = express.Router();
 
@@ -28,8 +28,11 @@ router.post('/blog', authMiddleware, async (req, res, next) => {
       });
     }
 
-    // 블로그 생성
-    const markdown = await generateBlogPost(transcript, { tone, imageCount, imageSource });
+    // 블로그 생성 + 해시태그 병렬 생성
+    const [markdown, hashtags] = await Promise.all([
+      generateBlogPost(transcript, { tone, imageCount, imageSource }),
+      generateHashtags(transcript),
+    ]);
 
     // 생성 이력 저장
     const { data: generation, error } = await supabase
@@ -58,6 +61,7 @@ router.post('/blog', authMiddleware, async (req, res, next) => {
     res.json({
       generationId: generation.id,
       markdown,
+      hashtags,
     });
   } catch (err) {
     next(err);
