@@ -116,7 +116,7 @@ function sectionToNaverHtml(section) {
   return html
 }
 
-export default function BlogPreview({ markdown, images = [], hashtags = { naver: [], instagram: [] } }) {
+export default function BlogPreview({ markdown, images = [], hashtags = { naver: [], instagram: [] }, signature = null }) {
   const [tab, setTab] = useState('preview')
   const [toast, setToast] = useState('')
   const [naverStep, setNaverStep] = useState(0)
@@ -133,7 +133,11 @@ export default function BlogPreview({ markdown, images = [], hashtags = { naver:
 
   async function handleNaverStep(stepIndex) {
     const section = sections[stepIndex]
-    const html = sectionToNaverHtml(section)
+    let html = sectionToNaverHtml(section)
+    // 마지막 단계에 서명 추가
+    if (stepIndex === totalSteps - 1 && signature?.html_content) {
+      html += signature.html_content
+    }
     await copyToClipboard(html)
     showToast(`✓ ${stepIndex + 1}/${totalSteps} 복사됐습니다. 네이버에 붙여넣기 하세요!`)
     setNaverStep(stepIndex + 1)
@@ -144,7 +148,8 @@ export default function BlogPreview({ markdown, images = [], hashtags = { naver:
   }
 
   async function handleCopyTistory() {
-    const html = markdownToHtml(markdown, images)
+    let html = markdownToHtml(markdown, images)
+    if (signature?.html_content) html += signature.html_content
     await copyToClipboard(html)
     showToast()
   }
@@ -272,7 +277,8 @@ export default function BlogPreview({ markdown, images = [], hashtags = { naver:
       {images.length === 0 && (
         <div style={styles.btnRow}>
           <button style={styles.btn('primary')} onClick={async () => {
-            const html = markdownToNaver(markdown, [])
+            let html = markdownToNaver(markdown, [])
+            if (signature?.html_content) html += signature.html_content
             await copyToClipboard(html)
             showToast()
           }}>
@@ -308,6 +314,20 @@ export default function BlogPreview({ markdown, images = [], hashtags = { naver:
               📋 복사
             </button>
           </div>
+        </div>
+      )}
+
+      {/* 선택된 서명 미리보기 */}
+      {signature && (
+        <div style={{
+          padding: '12px 16px', borderRadius: '8px',
+          border: '1px solid var(--accent)', background: 'var(--accent-dim)',
+          fontSize: '0.83rem', color: 'var(--text-secondary)',
+        }}>
+          <div style={{ fontWeight: 600, color: 'var(--accent)', marginBottom: '6px' }}>
+            ✦ 서명 적용됨: {signature.name}
+          </div>
+          <div dangerouslySetInnerHTML={{ __html: signature.html_content }} />
         </div>
       )}
 
