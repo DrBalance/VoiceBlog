@@ -65,32 +65,107 @@ export async function getGeneration(id) {
   return res.json()
 }
 
-// 커스텀 스타일 목록 조회
-export async function getStyles() {
+// ─── 프로필 ───────────────────────────────────────────
+
+export async function getProfiles() {
   const headers = await getAuthHeader()
-  const res = await fetch(`${API_URL}/api/generate/styles`, { headers })
+  const res = await fetch(`${API_URL}/api/profiles`, { headers })
   if (!res.ok) throw new Error((await res.json()).error)
   return res.json()
 }
 
-// 커스텀 스타일 생성
-export async function analyzeStyle(exampleText) {
+export async function createProfile(name) {
   const headers = await getAuthHeader()
-  const res = await fetch(`${API_URL}/api/generate/style`, {
+  const res = await fetch(`${API_URL}/api/profiles`, {
     method: 'POST',
     headers: { ...headers, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ exampleText }),
+    body: JSON.stringify({ name }),
   })
   if (!res.ok) throw new Error((await res.json()).error)
   return res.json()
 }
 
-// 커스텀 스타일 삭제
-export async function deleteStyle(id) {
+export async function updateProfile(id, name) {
   const headers = await getAuthHeader()
-  const res = await fetch(`${API_URL}/api/generate/style/${id}`, {
-    method: 'DELETE',
-    headers,
+  const res = await fetch(`${API_URL}/api/profiles/${id}`, {
+    method: 'PATCH',
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  })
+  if (!res.ok) throw new Error((await res.json()).error)
+  return res.json()
+}
+
+export async function deleteProfile(id) {
+  const headers = await getAuthHeader()
+  const res = await fetch(`${API_URL}/api/profiles/${id}`, {
+    method: 'DELETE', headers,
+  })
+  if (!res.ok) throw new Error((await res.json()).error)
+  return res.json()
+}
+
+// ─── 해시태그 그룹 ────────────────────────────────────
+
+export async function createHashtagGroup(profileId, { name, naverTags, instagramTags }) {
+  const headers = await getAuthHeader()
+  const res = await fetch(`${API_URL}/api/profiles/${profileId}/hashtag-groups`, {
+    method: 'POST',
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, naverTags, instagramTags }),
+  })
+  if (!res.ok) throw new Error((await res.json()).error)
+  return res.json()
+}
+
+export async function updateHashtagGroup(groupId, { name, naverTags, instagramTags }) {
+  const headers = await getAuthHeader()
+  const res = await fetch(`${API_URL}/api/profiles/hashtag-groups/${groupId}`, {
+    method: 'PATCH',
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, naverTags, instagramTags }),
+  })
+  if (!res.ok) throw new Error((await res.json()).error)
+  return res.json()
+}
+
+export async function deleteHashtagGroup(groupId) {
+  const headers = await getAuthHeader()
+  const res = await fetch(`${API_URL}/api/profiles/hashtag-groups/${groupId}`, {
+    method: 'DELETE', headers,
+  })
+  if (!res.ok) throw new Error((await res.json()).error)
+  return res.json()
+}
+
+// ─── 블로그 서명 ──────────────────────────────────────
+
+export async function createSignature(profileId, { name, htmlContent }) {
+  const headers = await getAuthHeader()
+  const res = await fetch(`${API_URL}/api/profiles/${profileId}/signatures`, {
+    method: 'POST',
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, htmlContent }),
+  })
+  if (!res.ok) throw new Error((await res.json()).error)
+  return res.json()
+}
+
+export async function updateSignature(sigId, { name, htmlContent }) {
+  const headers = await getAuthHeader()
+  const res = await fetch(`${API_URL}/api/profiles/signatures/${sigId}`, {
+    method: 'PATCH',
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, htmlContent }),
+  })
+  if (!res.ok) throw new Error((await res.json()).error)
+  return res.json()
+}
+
+export async function deleteSignature(sigId) {
+  const headers = await getAuthHeader()
+  const res = await fetch(`${API_URL}/api/profiles/signatures/${sigId}`, {
+    method: 'DELETE', headers,
   })
   if (!res.ok) throw new Error((await res.json()).error)
   return res.json()

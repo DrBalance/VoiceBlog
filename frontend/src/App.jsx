@@ -4,6 +4,7 @@ import { supabase } from './services/supabase'
 import Home from './pages/Home'
 import Login from './pages/Login'
 import History from './pages/History'
+import Settings from './pages/Settings'
 
 const styles = {
   nav: {
@@ -66,6 +67,9 @@ export default function App() {
           <Link to="/history" style={{ ...styles.navLink(location.pathname === '/history'), textDecoration: 'none' }}>
             이력
           </Link>
+          <Link to="/settings" style={{ ...styles.navLink(location.pathname === '/settings'), textDecoration: 'none' }}>
+            설정
+          </Link>
           <button style={styles.logoutBtn} onClick={() => supabase.auth.signOut()}>
             로그아웃
           </button>
@@ -75,6 +79,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/history" element={<History />} />
+          <Route path="/settings" element={<Settings />} />
         </Routes>
       </main>
     </>

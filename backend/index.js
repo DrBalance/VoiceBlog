@@ -6,6 +6,7 @@ const transcribeRouter = require('./routes/transcribe');
 const generateRouter = require('./routes/generate');
 const imagesRouter = require('./routes/images');
 const generationsRouter = require('./routes/generations');
+const profilesRouter = require('./routes/profiles');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -40,6 +41,7 @@ app.use('/api/transcribe', transcribeRouter);
 app.use('/api/generate', generateRouter);
 app.use('/api/generate', imagesRouter);
 app.use('/api/generations', generationsRouter);
+app.use('/api/profiles', profilesRouter);
 
 // 에러 핸들러
 app.use((err, req, res, next) => {
