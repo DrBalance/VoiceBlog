@@ -16,8 +16,8 @@ const TONE_PROMPTS = {
  * @returns {Promise<string>} Markdown 형식의 블로그 글
  */
 async function generateBlogPost(transcript, options = {}) {
-  const { tone = 'informative', imageCount = 3 } = options;
-  const toneInstruction = TONE_PROMPTS[tone] || TONE_PROMPTS.informative;
+  const { tone = 'informative', imageCount = 3, customSystemPrompt } = options;
+  const toneInstruction = customSystemPrompt || TONE_PROMPTS[tone] || TONE_PROMPTS.informative;
 
   const prompt = `다음은 블로그 포스트의 글감입니다. 음성을 텍스트로 변환한 내용이므로 다소 구어체적이거나 정리가 덜 되어 있을 수 있습니다.
 
@@ -87,4 +87,41 @@ ${markdown.slice(0, 2000)}
   }
 }
 
-module.exports = { generateBlogPost, generateHashtags };
+/**
+ * 예시 글을 분석해서 커스텀 스타일 생성
+ * @param {string} exampleText - 사용자가 입력한 예시 글 (최대 1,000자)
+ * @returns {Promise<{ name: string, description: string, systemPrompt: string }>}
+ */
+async function analyzeStyle(exampleText) {
+  const prompt = `다음 예시 글의 문체와 어조를 분석해서 블로그 글쓰기 스타일을 정의해주세요.
+
+[예시 글]
+${exampleText}
+
+아래 JSON 형식으로만 응답하세요. 설명이나 마크다운 없이 JSON만 출력:
+{
+  "name": "스타일 이름 (10자 이내, 예: 감성 일기체)",
+  "description": "스타일 한 줄 설명 (30자 이내)",
+  "systemPrompt": "이 스타일로 블로그 글을 쓸 때 Claude에게 전달할 상세 지침 (문체, 어조, 문장 길이, 특징적 표현 방식 등을 구체적으로 기술)"
+}`;
+
+  const message = await client.messages.create({
+    model: 'claude-opus-4-5',
+    max_tokens: 1024,
+    messages: [{ role: 'user', content: prompt }],
+  });
+
+  try {
+    const text = message.content[0].text.trim();
+    const clean = text.replace(/```json|```/g, '').trim();
+    return JSON.parse(clean);
+  } catch {
+    return {
+      name: '커스텀 스타일',
+      description: '사용자 정의 스타일',
+      systemPrompt: '사용자가 제공한 예시 글의 문체와 어조를 따라 작성해주세요.',
+    };
+  }
+}
+
+module.exports = { generateBlogPost, generateHashtags, analyzeStyle };

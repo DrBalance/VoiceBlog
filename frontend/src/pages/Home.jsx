@@ -87,7 +87,13 @@ export default function Home() {
 
       // 블로그 생성
       setProgressMsg('✍️ 블로그 글을 작성하는 중...')
-      const { generationId, markdown: md, hashtags: tags } = await generateBlog(text, options)
+      const isCustomTone = !['informative', 'friendly', 'expert', 'storytelling'].includes(options.tone)
+      const blogOptions = {
+        ...options,
+        customStyleId: isCustomTone ? options.tone : undefined,
+        tone: isCustomTone ? 'informative' : options.tone,
+      }
+      const { generationId, markdown: md, hashtags: tags } = await generateBlog(text, blogOptions)
       setMarkdown(md)
       setHashtags(tags || { naver: [], instagram: [] })
 

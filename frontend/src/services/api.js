@@ -64,3 +64,34 @@ export async function getGeneration(id) {
   if (!res.ok) throw new Error((await res.json()).error)
   return res.json()
 }
+
+// 커스텀 스타일 목록 조회
+export async function getStyles() {
+  const headers = await getAuthHeader()
+  const res = await fetch(`${API_URL}/api/generate/styles`, { headers })
+  if (!res.ok) throw new Error((await res.json()).error)
+  return res.json()
+}
+
+// 커스텀 스타일 생성
+export async function analyzeStyle(exampleText) {
+  const headers = await getAuthHeader()
+  const res = await fetch(`${API_URL}/api/generate/style`, {
+    method: 'POST',
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ exampleText }),
+  })
+  if (!res.ok) throw new Error((await res.json()).error)
+  return res.json()
+}
+
+// 커스텀 스타일 삭제
+export async function deleteStyle(id) {
+  const headers = await getAuthHeader()
+  const res = await fetch(`${API_URL}/api/generate/style/${id}`, {
+    method: 'DELETE',
+    headers,
+  })
+  if (!res.ok) throw new Error((await res.json()).error)
+  return res.json()
+}
