@@ -35,7 +35,16 @@ const styles = {
     padding: '8px 12px', fontSize: '0.8rem',
     color: 'var(--text-secondary)', display: 'flex', justifyContent: 'space-between',
   },
-  toast: (show) => ({
+  hashSection: {
+    padding: '20px', borderRadius: '12px',
+    background: 'var(--bg-hover)', border: '1px solid var(--border)',
+  },
+  hashTitle: { fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '12px' },
+  hashTabs: { display: 'flex', gap: '8px', marginBottom: '12px' },
+  hashContent: {
+    fontSize: '0.88rem', lineHeight: 2, color: 'var(--accent)',
+    wordBreak: 'break-all',
+  },
     position: 'fixed', bottom: '24px', left: '50%', transform: 'translateX(-50%)',
     padding: '10px 20px', borderRadius: '8px', fontSize: '0.9rem',
     background: 'var(--success)', color: '#fff', fontWeight: 500,
@@ -106,10 +115,11 @@ function sectionToNaverHtml(section) {
   return html
 }
 
-export default function BlogPreview({ markdown, images = [] }) {
+export default function BlogPreview({ markdown, images = [], hashtags = { naver: [], instagram: [] } }) {
   const [tab, setTab] = useState('preview')
   const [toast, setToast] = useState('')
-  const [naverStep, setNaverStep] = useState(0) // 0 = 아직 시작 안함
+  const [naverStep, setNaverStep] = useState(0)
+  const [hashTab, setHashTab] = useState('naver')
 
   function showToast(msg = '✓ 클립보드에 복사됐습니다') {
     setToast(msg)
@@ -267,6 +277,36 @@ export default function BlogPreview({ markdown, images = [] }) {
           }}>
             📋 네이버 블로그에 붙여넣기
           </button>
+        </div>
+      )}
+
+      {/* 해시태그 섹션 */}
+      {(hashtags.naver.length > 0 || hashtags.instagram.length > 0) && (
+        <div style={styles.hashSection}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+            <span style={styles.hashTitle}>🏷️ 해시태그</span>
+            <div style={styles.hashTabs}>
+              <button style={styles.tab(hashTab === 'naver')} onClick={() => setHashTab('naver')}>네이버</button>
+              <button style={styles.tab(hashTab === 'instagram')} onClick={() => setHashTab('instagram')}>인스타</button>
+            </div>
+          </div>
+          <div style={styles.hashContent}>
+            {hashTab === 'naver'
+              ? hashtags.naver.map(tag => `#${tag}`).join(' ')
+              : hashtags.instagram.map(tag => `#${tag}`).join(' ')
+            }
+          </div>
+          <div style={{ marginTop: '12px' }}>
+            <button style={styles.btn()} onClick={async () => {
+              const tags = hashTab === 'naver'
+                ? hashtags.naver.map(t => `#${t}`).join(' ')
+                : hashtags.instagram.map(t => `#${t}`).join(' ')
+              await copyToClipboard(tags)
+              showToast(`✓ ${hashTab === 'naver' ? '네이버' : '인스타'} 해시태그 복사됐습니다`)
+            }}>
+              📋 복사
+            </button>
+          </div>
         </div>
       )}
 

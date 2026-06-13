@@ -38,32 +38,39 @@ export default function OptionPanel({ options, onChange }) {
 
   return (
     <div style={styles.wrap}>
-      {/* 이미지 소스 */}
-      <div>
-        <span style={styles.label}>이미지 스타일</span>
-        <div style={styles.row}>
-          {IMAGE_SOURCES.map(s => (
-            <button key={s.value} style={styles.optBtn(imageSource === s.value)}
-              onClick={() => onChange({ ...options, imageSource: s.value })}>
-              {s.label}
-              <div style={{ fontSize: '0.75rem', opacity: 0.7 }}>{s.desc}</div>
-            </button>
-          ))}
-        </div>
-      </div>
-
       {/* 이미지 수량 */}
       <div>
         <span style={styles.label}>이미지 수량</span>
         <div style={styles.counter}>
           <button style={styles.countBtn}
-            onClick={() => onChange({ ...options, imageCount: Math.max(1, imageCount - 1) })}>−</button>
+            onClick={() => onChange({ ...options, imageCount: Math.max(0, imageCount - 1) })}>−</button>
           <span style={styles.countNum}>{imageCount}</span>
           <button style={styles.countBtn}
             onClick={() => onChange({ ...options, imageCount: Math.min(10, imageCount + 1) })}>+</button>
           <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>장</span>
+          {imageCount === 0 && (
+            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginLeft: '4px' }}>
+              (글만 생성)
+            </span>
+          )}
         </div>
       </div>
+
+      {/* 이미지 소스 — imageCount > 0일 때만 표시 */}
+      {imageCount > 0 && (
+        <div>
+          <span style={styles.label}>이미지 스타일</span>
+          <div style={styles.row}>
+            {IMAGE_SOURCES.map(s => (
+              <button key={s.value} style={styles.optBtn(imageSource === s.value)}
+                onClick={() => onChange({ ...options, imageSource: s.value })}>
+                {s.label}
+                <div style={{ fontSize: '0.75rem', opacity: 0.7 }}>{s.desc}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* 톤앤매너 */}
       <div>
