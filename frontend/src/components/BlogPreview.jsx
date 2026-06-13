@@ -45,6 +45,7 @@ const styles = {
     fontSize: '0.88rem', lineHeight: 2, color: 'var(--accent)',
     wordBreak: 'break-all',
   },
+  toast: (show) => ({
     position: 'fixed', bottom: '24px', left: '50%', transform: 'translateX(-50%)',
     padding: '10px 20px', borderRadius: '8px', fontSize: '0.9rem',
     background: 'var(--success)', color: '#fff', fontWeight: 500,
