@@ -66,6 +66,7 @@ export default function Home() {
   const [progressMsg, setProgressMsg] = useState('')
   const [markdown, setMarkdown] = useState('')
   const [images, setImages] = useState([])
+  const [hashtags, setHashtags] = useState({ naver: [], instagram: [] })
   const [error, setError] = useState('')
 
   async function handleGenerate() {
@@ -86,13 +87,18 @@ export default function Home() {
 
       // 블로그 생성
       setProgressMsg('✍️ 블로그 글을 작성하는 중...')
-      const { generationId, markdown: md } = await generateBlog(text, options)
+      const { generationId, markdown: md, hashtags: tags } = await generateBlog(text, options)
       setMarkdown(md)
+      setHashtags(tags || { naver: [], instagram: [] })
 
-      // 이미지 생성
-      setProgressMsg('🎨 이미지를 생성하는 중...')
-      const { images: imgs } = await generateImages(generationId, md, options)
-      setImages(imgs)
+      // 이미지 생성 (imageCount > 0일 때만)
+      if (options.imageCount > 0) {
+        setProgressMsg('🎨 이미지를 생성하는 중...')
+        const { images: imgs } = await generateImages(generationId, md, options)
+        setImages(imgs)
+      } else {
+        setImages([])
+      }
 
       setStep(3)
     } catch (err) {
@@ -202,7 +208,7 @@ export default function Home() {
       {step === 3 && (
         <>
           <div style={styles.card}>
-            <BlogPreview markdown={markdown} images={images} />
+            <BlogPreview markdown={markdown} images={images} hashtags={hashtags} />
           </div>
           <button style={{ ...styles.generateBtn, background: 'var(--bg-hover)', color: 'var(--text-secondary)' }}
             onClick={reset}>
