@@ -9,15 +9,17 @@ const TONE_PROMPTS = {
   storytelling: '경험 중심의 감성적인 스토리텔링 방식으로 작성해주세요.',
 };
 
-/**
- * 텍스트(글감)를 받아 블로그 포스트 Markdown 생성
- * @param {string} transcript - STT 변환 텍스트
- * @param {object} options - { tone, imageCount, imageSource }
- * @returns {Promise<string>} Markdown 형식의 블로그 글
- */
+const LENGTH_PROMPTS = {
+  short: '글 길이: 800~1200자 내외로 간결하게 작성.',
+  normal: '글 길이: 1500~2500자 내외로 작성.',
+  long: '글 길이: 3000~4000자 내외로 상세하게 작성.',
+  very_long: '글 길이: 5000자 이상으로 전문적이고 풍부하게 작성.',
+};
+
 async function generateBlogPost(transcript, options = {}) {
-  const { tone = 'informative', imageCount = 3, customSystemPrompt } = options;
+  const { tone = 'informative', imageCount = 3, contentLength = 'normal', useWebSearch = false, customSystemPrompt } = options;
   const toneInstruction = customSystemPrompt || TONE_PROMPTS[tone] || TONE_PROMPTS.informative;
+  const lengthInstruction = LENGTH_PROMPTS[contentLength] || LENGTH_PROMPTS.normal;
 
   const prompt = `다음은 블로그 포스트의 글감입니다. 음성을 텍스트로 변환한 내용이므로 다소 구어체적이거나 정리가 덜 되어 있을 수 있습니다.
 
@@ -33,27 +35,34 @@ ${transcript}
 - 이미지는 총 ${imageCount}개가 들어갈 위치에 아래 형식으로 표시:
   ![이미지설명](IMAGE_PLACEHOLDER_1), ![이미지설명](IMAGE_PLACEHOLDER_2) ... 순서대로
 - 이미지 위치는 내용 흐름상 자연스러운 곳에 배치
-- 글 길이: 1500~2500자 내외
+- ${lengthInstruction}
+- 글감이 부족하더라도 억지로 내용을 지어내지 말고 글감에 충실한 적절한 길이로 작성
 - 서론/본론/결론 구조 유지
 - SEO를 고려한 자연스러운 키워드 포함
-- **볼드(**텍스트**)는 절대 최소한으로 사용**: 문단 전체나 긴 문장에 볼드 금지. 반드시 강조가 필요한 핵심 단어 1~2개에만 사용. 볼드 없이도 자연스러운 글이 되도록 작성.
+- **볼드(**텍스트**)는 절대 최소한으로 사용**: 문단 전체나 긴 문장에 볼드 금지. 반드시 강조가 필요한 핵심 단어 1~2개에만 사용.
 
 Markdown 본문만 출력하세요. 부가 설명 없이 바로 # 제목부터 시작하세요.`;
 
-  const message = await client.messages.create({
+  const requestParams = {
     model: 'claude-opus-4-5',
-    max_tokens: 4096,
+    max_tokens: 8192,
     messages: [{ role: 'user', content: prompt }],
-  });
+  };
 
-  return message.content[0].text;
+  if (useWebSearch) {
+    requestParams.tools = [{ type: 'web_search_20250305', name: 'web_search' }];
+  }
+
+  const message = await client.messages.create(requestParams);
+
+  const textContent = message.content
+    .filter(block => block.type === 'text')
+    .map(block => block.text)
+    .join('');
+
+  return textContent || message.content[0]?.text || '';
 }
 
-/**
- * 블로그 마크다운을 받아 네이버/인스타 해시태그 생성
- * @param {string} markdown - 블로그 글 마크다운
- * @returns {Promise<{ naver: string[], instagram: string[] }>}
- */
 async function generateHashtags(markdown) {
   const prompt = `다음 블로그 글을 분석해서 해시태그를 생성해주세요.
 
@@ -87,11 +96,6 @@ ${markdown.slice(0, 2000)}
   }
 }
 
-/**
- * 예시 글을 분석해서 커스텀 스타일 생성
- * @param {string} exampleText - 사용자가 입력한 예시 글 (최대 1,000자)
- * @returns {Promise<{ name: string, description: string, systemPrompt: string }>}
- */
 async function analyzeStyle(exampleText) {
   const prompt = `다음 예시 글의 문체와 어조를 분석해서 블로그 글쓰기 스타일을 정의해주세요.
 

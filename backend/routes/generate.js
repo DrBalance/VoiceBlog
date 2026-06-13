@@ -6,7 +6,7 @@ const router = express.Router();
 
 // POST /api/generate/blog
 router.post('/blog', authMiddleware, async (req, res, next) => {
-  const { transcript, tone = 'informative', imageCount = 3, imageSource = 'dalle', customStyleId } = req.body;
+  const { transcript, tone = 'informative', imageCount = 3, imageSource = 'dalle', customStyleId, contentLength = 'normal', useWebSearch = false } = req.body;
 
   if (!transcript || transcript.trim().length < 10) {
     return res.status(400).json({ error: '글감 텍스트가 너무 짧습니다.' });
@@ -42,7 +42,7 @@ router.post('/blog', authMiddleware, async (req, res, next) => {
 
     // 블로그 생성 + 해시태그 병렬 생성
     const [markdown, hashtags] = await Promise.all([
-      generateBlogPost(transcript, { tone, imageCount, imageSource, customSystemPrompt }),
+      generateBlogPost(transcript, { tone, imageCount, imageSource, contentLength, useWebSearch, customSystemPrompt }),
       generateHashtags(transcript),
     ]);
 

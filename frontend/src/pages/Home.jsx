@@ -63,7 +63,7 @@ export default function Home() {
   const [step, setStep] = useState(0) // 0:입력 1:옵션 2:생성중 3:결과
   const [audioFile, setAudioFile] = useState(null)
   const [transcript, setTranscript] = useState('')
-  const [options, setOptions] = useState({ imageCount: 3, imageSource: 'dalle', tone: 'informative' })
+  const [options, setOptions] = useState({ imageCount: 3, imageSource: 'dalle', tone: 'informative', contentLength: 'normal', useWebSearch: false })
   const [progressMsg, setProgressMsg] = useState('')
   const [markdown, setMarkdown] = useState('')
   const [images, setImages] = useState([])
@@ -216,7 +216,7 @@ export default function Home() {
           )}
           <div style={styles.card}>
             <div style={styles.cardTitle}>생성 옵션</div>
-            <OptionPanel options={options} onChange={setOptions} />
+            <OptionPanel options={options} onChange={setOptions} transcriptLength={transcript.length} />
           </div>
           <div style={{ display: 'flex', gap: '12px' }}>
             <button style={{ ...styles.generateBtn, flex: '0 0 auto', width: 'auto', padding: '16px 24px', background: 'var(--bg-hover)', color: 'var(--text-secondary)' }}
