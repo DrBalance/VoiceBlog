@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useLocation } from 'react-router-dom'
 import AudioInput from '../components/AudioInput'
 import OptionPanel from '../components/OptionPanel'
 import BlogPreview from '../components/BlogPreview'
@@ -75,9 +76,23 @@ export default function Home() {
   const [selectedGroupIds, setSelectedGroupIds] = useState([])
   const [selectedSigId, setSelectedSigId] = useState('')
 
+  const location = useLocation()
+
   useEffect(() => {
     getProfiles().then(({ profiles: p }) => setProfiles(p)).catch(() => {})
   }, [])
+
+  // 이력에서 불러오기
+  useEffect(() => {
+    const restore = location.state?.restore
+    if (restore) {
+      setMarkdown(restore.markdown || '')
+      setImages(restore.images || [])
+      setHashtags(restore.hashtags || { naver: [], instagram: [] })
+      setStep(3)
+      window.history.replaceState({}, '') // state 초기화
+    }
+  }, [location.state])
 
   async function handleGenerate() {
     if (!audioFile && !transcript) return

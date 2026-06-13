@@ -55,4 +55,45 @@ router.get('/:id', authMiddleware, async (req, res, next) => {
   }
 });
 
+// GET /api/generations/images/all — 전체 이미지 라이브러리
+router.get('/images/all', authMiddleware, async (req, res, next) => {
+  try {
+    // 사용자의 모든 generation 목록
+    const { data: gens, error } = await supabase
+      .from('generations')
+      .select('id, created_at, transcript')
+      .eq('user_id', req.user.id)
+      .order('created_at', { ascending: false })
+      .limit(50);
+
+    if (error) throw error;
+
+    // 각 generation의 이미지 목록 병렬 조회
+    const results = await Promise.all(
+      gens.map(async (gen) => {
+        const { data: files } = await supabase.storage
+          .from('blog-images')
+          .list(`generations/${req.user.id}/${gen.id}`);
+
+        const images = (files || []).map(file => ({
+          name: file.name,
+          generationId: gen.id,
+          createdAt: gen.created_at,
+          excerpt: gen.transcript?.slice(0, 40) || '',
+          url: supabase.storage
+            .from('blog-images')
+            .getPublicUrl(`generations/${req.user.id}/${gen.id}/${file.name}`)
+            .data.publicUrl,
+        }));
+
+        return images;
+      })
+    );
+
+    res.json({ images: results.flat() });
+  } catch (err) {
+    next(err);
+  }
+});
+
 module.exports = router;

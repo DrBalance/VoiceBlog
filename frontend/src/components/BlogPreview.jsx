@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { markdownToNaver, markdownToHtml, copyToClipboard } from '../utils/markdownToNaver'
+import { getAllImages } from '../services/api'
 import JSZip from 'jszip'
 
 const styles = {
@@ -44,6 +45,40 @@ const styles = {
   hashContent: {
     fontSize: '0.88rem', lineHeight: 2, color: 'var(--accent)',
     wordBreak: 'break-all',
+  },
+  imgLibOverlay: {
+    position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    zIndex: 1000, padding: '20px',
+  },
+  imgLibModal: {
+    background: 'var(--bg-card)', borderRadius: '16px',
+    width: '100%', maxWidth: '680px', maxHeight: '85vh',
+    display: 'flex', flexDirection: 'column',
+    border: '1px solid var(--border)', overflow: 'hidden',
+  },
+  imgLibHead: {
+    padding: '18px 24px', borderBottom: '1px solid var(--border)',
+    display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0,
+  },
+  imgLibBody: { padding: '20px', overflowY: 'auto', flex: 1 },
+  imgLibGrid: {
+    display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '10px',
+  },
+  imgLibCard: (selected) => ({
+    borderRadius: '8px', overflow: 'hidden', cursor: 'pointer',
+    border: `2px solid ${selected ? 'var(--accent)' : 'var(--border)'}`,
+    position: 'relative',
+  }),
+  imgLibCheck: {
+    position: 'absolute', top: '6px', right: '6px',
+    width: '20px', height: '20px', borderRadius: '50%',
+    background: 'var(--accent)', display: 'flex', alignItems: 'center',
+    justifyContent: 'center', fontSize: '0.75rem', color: '#0e0e0e', fontWeight: 700,
+  },
+  imgLibFoot: {
+    padding: '14px 24px', borderTop: '1px solid var(--border)',
+    display: 'flex', gap: '10px', justifyContent: 'flex-end', flexShrink: 0,
   },
   toast: (show) => ({
     position: 'fixed', bottom: '24px', left: '50%', transform: 'translateX(-50%)',
@@ -121,6 +156,46 @@ export default function BlogPreview({ markdown, images = [], hashtags = { naver:
   const [toast, setToast] = useState('')
   const [naverStep, setNaverStep] = useState(0)
   const [hashTab, setHashTab] = useState('naver')
+  const [showImgLib, setShowImgLib] = useState(false)
+  const [libImages, setLibImages] = useState([])
+  const [libLoading, setLibLoading] = useState(false)
+  const [selectedLibImgs, setSelectedLibImgs] = useState([])
+
+  async function handleOpenImgLib() {
+    setShowImgLib(true)
+    setLibLoading(true)
+    try {
+      const { images } = await getAllImages()
+      setLibImages(images)
+    } catch {}
+    finally { setLibLoading(false) }
+  }
+
+  function toggleLibImg(img) {
+    setSelectedLibImgs(prev =>
+      prev.find(i => i.url === img.url)
+        ? prev.filter(i => i.url !== img.url)
+        : [...prev, img]
+    )
+  }
+
+  async function handleDownloadSelected() {
+    const zip = new JSZip()
+    await Promise.all(selectedLibImgs.map(async (img, i) => {
+      try {
+        const res = await fetch(img.url)
+        const blob = await res.blob()
+        zip.file(`image_${i + 1}.jpg`, blob)
+      } catch {}
+    }))
+    const blob = await zip.generateAsync({ type: 'blob' })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = `selected_images_${Date.now()}.zip`
+    a.click()
+    setShowImgLib(false)
+    setSelectedLibImgs([])
+  }
 
   function showToast(msg = '✓ 클립보드에 복사됐습니다') {
     setToast(msg)
@@ -339,7 +414,72 @@ export default function BlogPreview({ markdown, images = [], hashtags = { naver:
         <button style={styles.btn()} onClick={handleDownloadZip}>
           ↓ ZIP 다운로드
         </button>
+        <button style={styles.btn()} onClick={handleOpenImgLib}>
+          🖼 이미지 라이브러리
+        </button>
       </div>
+
+      {/* 이미지 라이브러리 모달 */}
+      {showImgLib && (
+        <div style={styles.imgLibOverlay} onClick={() => setShowImgLib(false)}>
+          <div style={styles.imgLibModal} onClick={e => e.stopPropagation()}>
+            <div style={styles.imgLibHead}>
+              <div>
+                <div style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                  🖼 이미지 라이브러리
+                </div>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                  과거 생성된 이미지를 선택해서 다운로드하세요
+                </div>
+              </div>
+              <button style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '1.2rem' }}
+                onClick={() => setShowImgLib(false)}>✕</button>
+            </div>
+
+            <div style={styles.imgLibBody}>
+              {libLoading ? (
+                <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
+                  불러오는 중...
+                </div>
+              ) : libImages.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
+                  저장된 이미지가 없습니다
+                </div>
+              ) : (
+                <div style={styles.imgLibGrid}>
+                  {libImages.map((img, i) => {
+                    const isSelected = selectedLibImgs.find(s => s.url === img.url)
+                    return (
+                      <div key={i} style={styles.imgLibCard(isSelected)} onClick={() => toggleLibImg(img)}>
+                        <img src={img.url} alt={img.name}
+                          style={{ width: '100%', height: '120px', objectFit: 'cover', display: 'block' }} />
+                        {isSelected && <div style={styles.imgLibCheck}>✓</div>}
+                        <div style={{ padding: '6px 8px', fontSize: '0.75rem', color: 'var(--text-muted)', background: 'var(--bg-hover)' }}>
+                          {img.excerpt || img.name}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div style={styles.imgLibFoot}>
+              <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', alignSelf: 'center' }}>
+                {selectedLibImgs.length}장 선택됨
+              </span>
+              <button style={styles.btn()} onClick={() => { setShowImgLib(false); setSelectedLibImgs([]) }}>
+                취소
+              </button>
+              <button style={styles.btn('primary')}
+                onClick={handleDownloadSelected}
+                disabled={selectedLibImgs.length === 0}>
+                ↓ 선택 다운로드
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div style={styles.toast(!!toast)}>{toast}</div>
     </div>

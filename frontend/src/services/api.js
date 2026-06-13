@@ -199,3 +199,11 @@ export async function deleteSignature(sigId) {
   if (!res.ok) throw new Error((await res.json()).error)
   return res.json()
 }
+
+// 전체 이미지 라이브러리
+export async function getAllImages() {
+  const headers = await getAuthHeader()
+  const res = await fetch(`${API_URL}/api/generations/images/all`, { headers })
+  if (!res.ok) throw new Error((await res.json()).error)
+  return res.json()
+}
