@@ -131,7 +131,7 @@ function splitMarkdownByImages(markdown, images) {
 
 // 구간 HTML 변환 (네이버용)
 function sectionToNaverHtml(section) {
-  let html = section.text
+  let html = section.text.trim()
 
   // 제목 변환
   html = html.replace(/^### (.+)$/gm, '<p><span style="font-size:1.1em;font-weight:bold;">$1</span></p>')
@@ -141,8 +141,16 @@ function sectionToNaverHtml(section) {
   html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
   html = html.replace(/\*(.+?)\*/g, '<em>$1</em>')
   html = html.replace(/`([^`]+)`/g, '<code style="background:#f4f4f4;padding:2px 6px;border-radius:3px;font-size:0.9em;">$1</code>')
-  html = html.replace(/\n\n/g, '<br><br>')
-  html = html.replace(/\n/g, '<br>')
+  html = html.replace(/^---$/gm, '<hr style="border:none;border-top:1px solid #eee;margin:16px 0;" />')
+
+  // 줄 단위로 처리 — 이미 HTML 태그인 줄은 그대로, 빈 줄은 건너뜀, 일반 텍스트는 p태그로
+  const lines = html.split('\n')
+  const processed = lines.map(line => {
+    if (line.trim() === '') return ''
+    if (line.trim().startsWith('<')) return line
+    return `<p style="font-weight:normal;line-height:1.8;">${line}</p>`
+  })
+  html = processed.filter(l => l !== '').join('\n')
 
   // 이미지 추가
   if (section.image && (section.image.permanentUrl || section.image.url)) {
