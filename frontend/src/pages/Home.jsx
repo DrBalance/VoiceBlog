@@ -139,6 +139,7 @@ export default function Home() {
   const [images, setImages] = useState([])
   const [hashtags, setHashtags] = useState({ naver: [], instagram: [] })
   const [error, setError] = useState('')
+  const [reuseImages, setReuseImages] = useState(false)
 
   // 프로필 관련
   const [profiles, setProfiles] = useState([])
@@ -204,11 +205,13 @@ export default function Home() {
       setMarkdown(md)
       setHashtags(tags || { naver: [], instagram: [] })
 
-      if (options.imageCount > 0) {
+      if (options.imageCount > 0 && !reuseImages) {
         setProgressPhase('image')
-        setRetryCount(0)
+        setRetryCount(0) // 이미지 단계 시작 시 프로그레스바 리셋
         const { images: imgs } = await generateImages(generationId, md, options)
         setImages(imgs)
+      } else if (reuseImages) {
+        // 이전 이미지 그대로 유지
       } else {
         setImages([])
       }
@@ -331,6 +334,22 @@ export default function Home() {
             </div>
           )}
 
+          {/* 이전 이미지 재사용 */}
+          {images.length > 0 && (
+            <div style={{
+              padding: '12px 16px', borderRadius: '8px', marginBottom: '16px',
+              background: 'var(--bg-hover)', border: '1px solid var(--border)',
+              display: 'flex', alignItems: 'center', gap: '12px',
+            }}>
+              <input type='checkbox' id='reuseImages' checked={reuseImages}
+                onChange={e => setReuseImages(e.target.checked)}
+                style={{ width: '16px', height: '16px', cursor: 'pointer' }} />
+              <label htmlFor='reuseImages' style={{ fontSize: '0.88rem', color: 'var(--text-secondary)', cursor: 'pointer' }}>
+                이전에 생성된 이미지 {images.length}장 재사용 (새로 생성하지 않음)
+              </label>
+            </div>
+          )}
+
           <div style={styles.card}>
             <div style={styles.cardTitle}>생성 옵션</div>
             <OptionPanel options={options} onChange={setOptions} transcriptLength={transcript.length} />
@@ -381,86 +400,6 @@ export default function Home() {
               </button>
             </div>
 
-            {/* 프로필 선택 패널 */}
-            {profiles.length > 0 && (
-              <div style={styles.card}>
-                <div style={styles.cardTitle}>📋 프로필 선택</div>
-                <select
-                  value={selectedProfileId}
-                  onChange={e => {
-                    setSelectedProfileId(e.target.value)
-                    setSelectedGroupIds([])
-                    setSelectedSigId('')
-                  }}
-                  style={{
-                    width: '100%', padding: '10px 12px', borderRadius: '8px',
-                    fontSize: '0.88rem', background: 'var(--bg-hover)',
-                    border: '1px solid var(--border)', color: 'var(--text-primary)',
-                    marginBottom: '16px', cursor: 'pointer',
-                  }}
-                >
-                  <option value=''>— 프로필 선택 안 함 —</option>
-                  {profiles.map(p => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
-                </select>
-
-                {selectedProfile?.hashtag_groups?.length > 0 && (
-                  <div style={{ marginBottom: '16px' }}>
-                    <div style={{ fontSize: '0.83rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '8px' }}>
-                      해시태그 그룹
-                    </div>
-                    {selectedProfile.hashtag_groups.map(g => (
-                      <label key={g.id} style={{
-                        display: 'flex', alignItems: 'center', gap: '10px',
-                        padding: '8px 12px', borderRadius: '8px', cursor: 'pointer',
-                        background: selectedGroupIds.includes(g.id) ? 'var(--accent-dim)' : 'var(--bg-hover)',
-                        border: `1px solid ${selectedGroupIds.includes(g.id) ? 'var(--accent)' : 'var(--border)'}`,
-                        marginBottom: '6px', fontSize: '0.88rem',
-                      }}>
-                        <input type='checkbox' checked={selectedGroupIds.includes(g.id)}
-                          onChange={e => {
-                            setSelectedGroupIds(prev =>
-                              e.target.checked ? [...prev, g.id] : prev.filter(id => id !== g.id)
-                            )
-                          }}
-                        />
-                        <div>
-                          <div style={{ fontWeight: 500 }}>{g.name}</div>
-                          <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                            네이버 {g.naver_tags?.length || 0}개 · 인스타 {g.instagram_tags?.length || 0}개
-                          </div>
-                        </div>
-                      </label>
-                    ))}
-                  </div>
-                )}
-
-                {selectedProfile?.blog_signatures?.length > 0 && (
-                  <div>
-                    <div style={{ fontSize: '0.83rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '8px' }}>
-                      블로그 서명
-                    </div>
-                    {selectedProfile.blog_signatures.map(sig => (
-                      <label key={sig.id} style={{
-                        display: 'flex', alignItems: 'center', gap: '10px',
-                        padding: '8px 12px', borderRadius: '8px', cursor: 'pointer',
-                        background: selectedSigId === sig.id ? 'var(--accent-dim)' : 'var(--bg-hover)',
-                        border: `1px solid ${selectedSigId === sig.id ? 'var(--accent)' : 'var(--border)'}`,
-                        marginBottom: '6px', fontSize: '0.88rem',
-                      }}>
-                        <input type='radio' name='signature'
-                          checked={selectedSigId === sig.id}
-                          onChange={() => setSelectedSigId(sig.id === selectedSigId ? '' : sig.id)}
-                        />
-                        <span style={{ fontWeight: 500 }}>{sig.name}</span>
-                      </label>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
             <div style={styles.card}>
               <BlogPreview
                 markdown={markdown}
@@ -468,6 +407,88 @@ export default function Home() {
                 hashtags={mergedHashtags}
                 signature={selectedSig}
               />
+
+              {/* 프로필 선택 — 해시태그 섹션 아래 */}
+              {profiles.length > 0 && (
+                <div style={{ marginTop: '24px', borderTop: '1px solid var(--border)', paddingTop: '20px' }}>
+                  <div style={{ fontSize: '0.88rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '12px' }}>
+                    📋 프로필에서 해시태그 / 서명 추가
+                  </div>
+
+                  {/* 프로필 카드 목록 */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {profiles.map(p => (
+                      <div key={p.id}>
+                        {/* 프로필 클릭 토글 */}
+                        <div
+                          onClick={() => setSelectedProfileId(prev => prev === p.id ? '' : p.id)}
+                          style={{
+                            padding: '10px 14px', borderRadius: '8px', cursor: 'pointer',
+                            background: selectedProfileId === p.id ? 'var(--accent-dim)' : 'var(--bg-hover)',
+                            border: `1px solid ${selectedProfileId === p.id ? 'var(--accent)' : 'var(--border)'}`,
+                            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                            fontSize: '0.88rem', fontWeight: 500, color: 'var(--text-primary)',
+                          }}
+                        >
+                          <span>{p.name}</span>
+                          <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+                            {selectedProfileId === p.id ? '▲' : '▼'}
+                          </span>
+                        </div>
+
+                        {/* 펼쳐지면 해시태그 그룹 + 서명 */}
+                        {selectedProfileId === p.id && (
+                          <div style={{ paddingLeft: '12px', marginTop: '6px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                            {/* 해시태그 그룹 */}
+                            {p.hashtag_groups?.map(g => (
+                              <label key={g.id} style={{
+                                display: 'flex', alignItems: 'center', gap: '10px',
+                                padding: '8px 12px', borderRadius: '8px', cursor: 'pointer',
+                                background: selectedGroupIds.includes(g.id) ? 'var(--accent-dim)' : 'var(--bg-card)',
+                                border: `1px solid ${selectedGroupIds.includes(g.id) ? 'var(--accent)' : 'var(--border)'}`,
+                                fontSize: '0.85rem',
+                              }}>
+                                <input type='checkbox' checked={selectedGroupIds.includes(g.id)}
+                                  onChange={e => setSelectedGroupIds(prev =>
+                                    e.target.checked ? [...prev, g.id] : prev.filter(id => id !== g.id)
+                                  )} />
+                                <div>
+                                  <div style={{ fontWeight: 500 }}>🏷 {g.name}</div>
+                                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                                    네이버 {g.naver_tags?.length || 0}개 · 인스타 {g.instagram_tags?.length || 0}개
+                                  </div>
+                                </div>
+                              </label>
+                            ))}
+
+                            {/* 블로그 서명 */}
+                            {p.blog_signatures?.map(sig => (
+                              <label key={sig.id} style={{
+                                display: 'flex', alignItems: 'center', gap: '10px',
+                                padding: '8px 12px', borderRadius: '8px', cursor: 'pointer',
+                                background: selectedSigId === sig.id ? 'var(--accent-dim)' : 'var(--bg-card)',
+                                border: `1px solid ${selectedSigId === sig.id ? 'var(--accent)' : 'var(--border)'}`,
+                                fontSize: '0.85rem',
+                              }}>
+                                <input type='radio' name='signature'
+                                  checked={selectedSigId === sig.id}
+                                  onChange={() => setSelectedSigId(prev => prev === sig.id ? '' : sig.id)} />
+                                <span style={{ fontWeight: 500 }}>✍ {sig.name}</span>
+                              </label>
+                            ))}
+
+                            {(!p.hashtag_groups?.length && !p.blog_signatures?.length) && (
+                              <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', padding: '8px 12px' }}>
+                                해시태그 그룹 또는 서명을 설정 페이지에서 추가해주세요
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </>
         )

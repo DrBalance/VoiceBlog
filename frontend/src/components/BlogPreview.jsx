@@ -263,7 +263,23 @@ export default function BlogPreview({ markdown, images = [], hashtags = { naver:
       {/* 콘텐츠 */}
       {tab === 'preview' && (
         <div style={styles.preview}>
-          <ReactMarkdown>{markdown.replace(/!\[[^\]]*\]\(IMAGE_PLACEHOLDER_\d+\)/g, '')}</ReactMarkdown>
+          {images.length > 0 ? (
+            // 이미지가 있으면 IMAGE_PLACEHOLDER 위치에 실제 이미지 삽입
+            splitMarkdownByImages(markdown, images).map((section, i) => (
+              <div key={i}>
+                <ReactMarkdown>{section.text}</ReactMarkdown>
+                {section.image && (
+                  <img
+                    src={section.image.permanentUrl || section.image.url}
+                    alt={section.image.description || ''}
+                    style={{ width: '100%', borderRadius: '8px', margin: '12px 0', display: 'block' }}
+                  />
+                )}
+              </div>
+            ))
+          ) : (
+            <ReactMarkdown>{markdown.replace(/!\[[^\]]*\]\(IMAGE_PLACEHOLDER_\d+\)/g, '')}</ReactMarkdown>
+          )}
         </div>
       )}
 

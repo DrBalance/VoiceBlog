@@ -215,6 +215,30 @@ export default function OptionPanel({ options, onChange, transcriptLength = 0 })
         </div>
       </div>
 
+      {/* 웹 검색 보충 — 글 길이 바로 아래 */}
+      <div>
+        <div style={styles.toggleRow}>
+          <div>
+            <div style={{ fontSize: '0.88rem', fontWeight: 500, color: 'var(--text-primary)' }}>
+              🔍 웹 검색으로 내용 보충
+            </div>
+            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+              글감이 부족할 때 관련 정보를 검색해서 보완합니다
+            </div>
+          </div>
+          <button style={styles.toggle(useWebSearch)}
+            onClick={() => onChange({ ...options, useWebSearch: !useWebSearch })}>
+            <div style={styles.toggleThumb(useWebSearch)} />
+          </button>
+        </div>
+        {isTranscriptShort && (
+          <div style={{ ...styles.warnBox, marginTop: '8px' }}>
+            ⚠️ 글감이 짧습니다 ({transcriptLength}자). 웹 검색을 켜면 관련 정보를 보충해 더 풍부한 글을 작성할 수 있습니다.
+            {!useWebSearch && ' 그렇지 않으면 일부 내용을 지어낼 수 있습니다.'}
+          </div>
+        )}
+      </div>
+
       {/* 이미지 수량 */}
       <div>
         <span style={styles.label}>이미지 수량</span>
@@ -248,32 +272,6 @@ export default function OptionPanel({ options, onChange, transcriptLength = 0 })
           </div>
         </div>
       )}
-
-      {/* 웹 검색 보충 */}
-      <div>
-        <div style={styles.toggleRow}>
-          <div>
-            <div style={{ fontSize: '0.88rem', fontWeight: 500, color: 'var(--text-primary)' }}>
-              🔍 웹 검색으로 내용 보충
-            </div>
-            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-              글감이 부족할 때 관련 정보를 검색해서 보완합니다
-            </div>
-          </div>
-          <button style={styles.toggle(useWebSearch)}
-            onClick={() => onChange({ ...options, useWebSearch: !useWebSearch })}>
-            <div style={styles.toggleThumb(useWebSearch)} />
-          </button>
-        </div>
-
-        {/* 글감 부족 경고 */}
-        {isTranscriptShort && (
-          <div style={{ ...styles.warnBox, marginTop: '8px' }}>
-            ⚠️ 글감이 짧습니다 ({transcriptLength}자). 웹 검색을 켜면 관련 정보를 보충해 더 풍부한 글을 작성할 수 있습니다.
-            {!useWebSearch && ' 그렇지 않으면 일부 내용을 지어낼 수 있습니다.'}
-          </div>
-        )}
-      </div>
 
       {/* 톤앤매너 */}
       <div>
