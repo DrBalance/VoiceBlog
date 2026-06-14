@@ -17,15 +17,19 @@ const LENGTH_PROMPTS = {
 };
 
 async function generateBlogPost(transcript, options = {}) {
-  const { tone = 'informative', imageCount = 3, contentLength = 'normal', useWebSearch = false, customSystemPrompt } = options;
+  const { tone = 'informative', imageCount = 3, contentLength = 'normal', useWebSearch = false, customSystemPrompt, prevMarkdown } = options;
   const toneInstruction = customSystemPrompt || TONE_PROMPTS[tone] || TONE_PROMPTS.informative;
   const lengthInstruction = LENGTH_PROMPTS[contentLength] || LENGTH_PROMPTS.normal;
+
+  const prevSection = prevMarkdown
+    ? `\n[이전에 작성된 참고 글]\n${prevMarkdown.slice(0, 3000)}\n\n위 글을 참고해서 새로운 옵션에 맞게 더 나은 버전으로 작성해주세요.\n`
+    : '';
 
   const prompt = `다음은 블로그 포스트의 글감입니다. 음성을 텍스트로 변환한 내용이므로 다소 구어체적이거나 정리가 덜 되어 있을 수 있습니다.
 
 [글감]
 ${transcript}
-
+${prevSection}
 위 글감을 바탕으로 네이버 블로그 포스트를 작성해주세요.
 
 [작성 규칙]

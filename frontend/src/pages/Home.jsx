@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useLocation } from 'react-router-dom'
 import AudioInput from '../components/AudioInput'
 import OptionPanel from '../components/OptionPanel'
@@ -6,6 +6,18 @@ import BlogPreview from '../components/BlogPreview'
 import { transcribeAudio, generateBlog, generateImages, getProfiles } from '../services/api'
 
 const STEPS = ['음성 입력', '옵션 설정', '생성 중', '결과 확인']
+
+// 예상 시간 계산 (초)
+function calcExpectedTime(options, phase) {
+  if (phase === 'blog') {
+    const base = { short: 20, normal: 30, long: 50, very_long: 80 }[options.contentLength] || 30
+    return base + (options.useWebSearch ? 20 : 0)
+  }
+  if (phase === 'image') {
+    return Math.max(options.imageCount, 1) * 20
+  }
+  return 30
+}
 
 const styles = {
   page: { maxWidth: '800px', margin: '0 auto', padding: '48px 24px' },
@@ -18,12 +30,14 @@ const styles = {
   titleAccent: { color: 'var(--accent)', fontStyle: 'italic' },
   subtitle: { color: 'var(--text-secondary)', fontSize: '1rem' },
   stepper: { display: 'flex', gap: '0', marginBottom: '40px' },
-  stepItem: (active, done) => ({
+  stepItem: (active, done, clickable) => ({
     flex: 1, padding: '10px 4px', textAlign: 'center', fontSize: '0.8rem',
     fontWeight: active ? 600 : 400,
     color: done ? 'var(--accent)' : active ? 'var(--text-primary)' : 'var(--text-muted)',
     borderBottom: `2px solid ${done || active ? 'var(--accent)' : 'var(--border)'}`,
     transition: 'all 0.3s',
+    cursor: clickable ? 'pointer' : 'default',
+    userSelect: 'none',
   }),
   card: {
     background: 'var(--bg-card)', border: '1px solid var(--border)',
@@ -36,8 +50,6 @@ const styles = {
     background: 'var(--accent)', color: '#0e0e0e', border: 'none',
     marginTop: '8px',
   },
-  progress: { display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '40px', gap: '16px' },
-  progressLabel: { color: 'var(--text-secondary)', fontSize: '0.95rem' },
   error: {
     padding: '14px 16px', borderRadius: '8px', marginBottom: '16px',
     background: 'rgba(224,92,92,0.1)', border: '1px solid var(--error)',
@@ -49,22 +61,80 @@ const styles = {
     color: 'var(--text-secondary)', lineHeight: 1.7, marginTop: '12px',
     maxHeight: '120px', overflowY: 'auto',
   },
+  // 프로그레스
+  progressWrap: {
+    display: 'flex', flexDirection: 'column', alignItems: 'center',
+    padding: '48px 32px', gap: '20px',
+  },
+  progressLabel: { color: 'var(--text-primary)', fontSize: '1rem', fontWeight: 500 },
+  progressSub: { color: 'var(--text-muted)', fontSize: '0.85rem' },
+  progressBarWrap: {
+    width: '100%', height: '6px', borderRadius: '3px',
+    background: 'var(--border)', overflow: 'hidden',
+  },
+  progressBarFill: (pct) => ({
+    height: '100%', borderRadius: '3px',
+    background: 'var(--accent)',
+    width: `${Math.min(pct, 100)}%`,
+    transition: 'width 0.5s linear',
+  }),
 }
 
-const Spinner = () => (
-  <div style={{
-    width: '40px', height: '40px', borderRadius: '50%',
-    border: '3px solid var(--border)', borderTopColor: 'var(--accent)',
-    animation: 'spin 0.8s linear infinite',
-  }} />
-)
+// 프로그레스바 컴포넌트
+function ProgressBar({ label, expectedSec, retryCount }) {
+  const [elapsed, setElapsed] = useState(0)
+  const startRef = useRef(Date.now())
+
+  useEffect(() => {
+    startRef.current = Date.now()
+    setElapsed(0)
+  }, [retryCount])
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setElapsed(Math.floor((Date.now() - startRef.current) / 1000))
+    }, 500)
+    return () => clearInterval(timer)
+  }, [retryCount])
+
+  const pct = (elapsed / expectedSec) * 100
+  const isOverdue = elapsed >= expectedSec
+
+  return (
+    <div style={styles.progressWrap}>
+      <div style={styles.progressLabel}>{label}</div>
+      <div style={{ width: '100%' }}>
+        <div style={styles.progressBarWrap}>
+          <div style={styles.progressBarFill(pct)} />
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px' }}>
+          <span style={styles.progressSub}>
+            {isOverdue
+              ? '⏳ 예상보다 오래 걸리고 있습니다...'
+              : `${elapsed}초 경과`}
+          </span>
+          <span style={styles.progressSub}>예상 {expectedSec}초</span>
+        </div>
+      </div>
+      {isOverdue && (
+        <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', textAlign: 'center' }}>
+          서버 상태에 따라 더 걸릴 수 있습니다. 잠시만 기다려주세요.
+        </div>
+      )}
+    </div>
+  )
+}
 
 export default function Home() {
-  const [step, setStep] = useState(0) // 0:입력 1:옵션 2:생성중 3:결과
+  const [step, setStep] = useState(0)
   const [audioFile, setAudioFile] = useState(null)
   const [transcript, setTranscript] = useState('')
-  const [options, setOptions] = useState({ imageCount: 3, imageSource: 'dalle', tone: 'informative', contentLength: 'normal', useWebSearch: false })
-  const [progressMsg, setProgressMsg] = useState('')
+  const [options, setOptions] = useState({
+    imageCount: 3, imageSource: 'dalle', tone: 'informative',
+    contentLength: 'normal', useWebSearch: false,
+  })
+  const [progressPhase, setProgressPhase] = useState('blog') // 'blog' | 'image'
+  const [retryCount, setRetryCount] = useState(0)
   const [markdown, setMarkdown] = useState('')
   const [images, setImages] = useState([])
   const [hashtags, setHashtags] = useState({ naver: [], instagram: [] })
@@ -82,7 +152,6 @@ export default function Home() {
     getProfiles().then(({ profiles: p }) => setProfiles(p)).catch(() => {})
   }, [])
 
-  // 이력에서 불러오기
   useEffect(() => {
     const restore = location.state?.restore
     if (restore) {
@@ -90,41 +159,54 @@ export default function Home() {
       setImages(restore.images || [])
       setHashtags(restore.hashtags || { naver: [], instagram: [] })
       setStep(3)
-      window.history.replaceState({}, '') // state 초기화
+      window.history.replaceState({}, '')
     }
   }, [location.state])
 
-  async function handleGenerate() {
+  // 프로그레스바 예상 시간 (재시도 시 리셋)
+  const expectedSec = calcExpectedTime(options, progressPhase)
+
+  // 예상시간 초과 감지 → retryCount 증가로 바 리셋
+  useEffect(() => {
+    if (step !== 2) return
+    const timer = setTimeout(() => {
+      setRetryCount(c => c + 1)
+    }, expectedSec * 1000 + 500)
+    return () => clearTimeout(timer)
+  }, [step, retryCount, expectedSec])
+
+  async function handleGenerate(prevMarkdown = '') {
     if (!audioFile && !transcript) return
     setError('')
     setStep(2)
+    setProgressPhase('blog')
+    setRetryCount(0)
 
     try {
       let text = transcript
 
-      // STT
-      if (audioFile) {
-        setProgressMsg('🎙 음성을 텍스트로 변환하는 중...')
+      if (audioFile && !transcript) {
+        setProgressPhase('stt')
         const { transcript: t } = await transcribeAudio(audioFile)
         text = t
         setTranscript(t)
       }
 
-      // 블로그 생성
-      setProgressMsg('✍️ 블로그 글을 작성하는 중...')
+      setProgressPhase('blog')
       const isCustomTone = !['informative', 'friendly', 'expert', 'storytelling'].includes(options.tone)
       const blogOptions = {
         ...options,
         customStyleId: isCustomTone ? options.tone : undefined,
         tone: isCustomTone ? 'informative' : options.tone,
+        prevMarkdown: prevMarkdown || undefined,
       }
       const { generationId, markdown: md, hashtags: tags } = await generateBlog(text, blogOptions)
       setMarkdown(md)
       setHashtags(tags || { naver: [], instagram: [] })
 
-      // 이미지 생성 (imageCount > 0일 때만)
       if (options.imageCount > 0) {
-        setProgressMsg('🎨 이미지를 생성하는 중...')
+        setProgressPhase('image')
+        setRetryCount(0)
         const { images: imgs } = await generateImages(generationId, md, options)
         setImages(imgs)
       } else {
@@ -138,22 +220,35 @@ export default function Home() {
     }
   }
 
+  // 탭 클릭 핸들러
+  function handleStepClick(i) {
+    if (step === 2) return // 생성 중엔 이동 불가
+    if (i >= step && i !== 3) return // 아직 안 간 단계는 클릭 불가 (결과 제외)
+    if (i === 3 && !markdown) return // 결과 없으면 결과 탭 불가
+    setStep(i)
+  }
+
   function reset() {
     setStep(0)
     setAudioFile(null)
     setTranscript('')
     setMarkdown('')
     setImages([])
+    setHashtags({ naver: [], instagram: [] })
     setError('')
     setSelectedProfileId('')
     setSelectedGroupIds([])
     setSelectedSigId('')
   }
 
+  const progressLabel = {
+    stt: '🎙 음성을 텍스트로 변환하는 중...',
+    blog: '✍️ 블로그 글을 작성하는 중...',
+    image: '🎨 이미지를 생성하는 중...',
+  }[progressPhase] || '처리 중...'
+
   return (
     <div style={styles.page}>
-      <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
-
       <header style={styles.header}>
         <h1 style={styles.title}>
           Voice<span style={styles.titleAccent}>Blog</span>
@@ -161,11 +256,20 @@ export default function Home() {
         <p style={styles.subtitle}>음성을 녹음하거나 파일을 업로드하면 블로그 포스트를 자동으로 작성해드립니다</p>
       </header>
 
-      {/* 스텝 인디케이터 */}
+      {/* 스텝 인디케이터 — 클릭 가능 */}
       <div style={styles.stepper}>
-        {['음성 입력', '옵션 설정', '생성 중', '결과 확인'].map((s, i) => (
-          <div key={i} style={styles.stepItem(step === i, step > i)}>{s}</div>
-        ))}
+        {STEPS.map((s, i) => {
+          const clickable = step !== 2 && (i < step || (i === 3 && markdown))
+          return (
+            <div key={i}
+              style={styles.stepItem(step === i, step > i, clickable)}
+              onClick={() => handleStepClick(i)}
+              title={clickable ? `${s}으로 돌아가기` : ''}
+            >
+              {s}
+            </div>
+          )
+        })}
       </div>
 
       {error && <div style={styles.error}>⚠ {error}</div>}
@@ -188,6 +292,7 @@ export default function Home() {
                 width: '100%', minHeight: '120px', background: 'var(--bg-hover)',
                 border: '1px solid var(--border)', borderRadius: '8px', padding: '12px',
                 color: 'var(--text-primary)', fontSize: '0.9rem', lineHeight: 1.7, resize: 'vertical',
+                boxSizing: 'border-box',
               }}
             />
             {transcript.length > 10 && (
@@ -214,6 +319,18 @@ export default function Home() {
               <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>🎵 {audioFile.name}</div>
             </div>
           )}
+
+          {/* 이전 생성 글이 있으면 참고글 안내 */}
+          {markdown && (
+            <div style={{
+              padding: '12px 16px', borderRadius: '8px', marginBottom: '16px',
+              background: 'var(--accent-dim)', border: '1px solid var(--accent)',
+              fontSize: '0.85rem', color: 'var(--text-secondary)',
+            }}>
+              ✦ 이전에 생성된 글을 참고해서 새 버전을 작성합니다. 옵션을 변경하고 재생성하세요.
+            </div>
+          )}
+
           <div style={styles.card}>
             <div style={styles.cardTitle}>생성 옵션</div>
             <OptionPanel options={options} onChange={setOptions} transcriptLength={transcript.length} />
@@ -221,8 +338,8 @@ export default function Home() {
           <div style={{ display: 'flex', gap: '12px' }}>
             <button style={{ ...styles.generateBtn, flex: '0 0 auto', width: 'auto', padding: '16px 24px', background: 'var(--bg-hover)', color: 'var(--text-secondary)' }}
               onClick={reset}>← 처음으로</button>
-            <button style={styles.generateBtn} onClick={handleGenerate}>
-              🚀 블로그 포스트 생성
+            <button style={styles.generateBtn} onClick={() => handleGenerate(markdown)}>
+              🚀 {markdown ? '다시 생성' : '블로그 포스트 생성'}
             </button>
           </div>
         </>
@@ -231,10 +348,11 @@ export default function Home() {
       {/* Step 2: 생성 중 */}
       {step === 2 && (
         <div style={styles.card}>
-          <div style={styles.progress}>
-            <Spinner />
-            <div style={styles.progressLabel}>{progressMsg}</div>
-          </div>
+          <ProgressBar
+            label={progressLabel}
+            expectedSec={progressPhase === 'stt' ? 15 : expectedSec}
+            retryCount={retryCount}
+          />
         </div>
       )}
 
@@ -244,26 +362,29 @@ export default function Home() {
         const selectedGroups = selectedProfile?.hashtag_groups?.filter(g => selectedGroupIds.includes(g.id)) || []
         const selectedSig = selectedProfile?.blog_signatures?.find(s => s.id === selectedSigId) || null
 
-        // 선택한 해시태그 그룹을 AI 해시태그에 병합
         const mergedHashtags = {
-          naver: [
-            ...hashtags.naver,
-            ...selectedGroups.flatMap(g => g.naver_tags || []),
-          ],
-          instagram: [
-            ...hashtags.instagram,
-            ...selectedGroups.flatMap(g => g.instagram_tags || []),
-          ],
+          naver: [...hashtags.naver, ...selectedGroups.flatMap(g => g.naver_tags || [])],
+          instagram: [...hashtags.instagram, ...selectedGroups.flatMap(g => g.instagram_tags || [])],
         }
 
         return (
           <>
+            {/* 결과 화면 액션 버튼 */}
+            <div style={{ display: 'flex', gap: '10px', marginBottom: '16px' }}>
+              <button style={{ ...styles.generateBtn, flex: 1, marginTop: 0, background: 'var(--bg-hover)', color: 'var(--text-secondary)', fontSize: '0.88rem', padding: '12px' }}
+                onClick={() => setStep(1)}>
+                ⚙ 옵션 재설정
+              </button>
+              <button style={{ ...styles.generateBtn, flex: 1, marginTop: 0, fontSize: '0.88rem', padding: '12px' }}
+                onClick={reset}>
+                + 새 포스트 만들기
+              </button>
+            </div>
+
             {/* 프로필 선택 패널 */}
             {profiles.length > 0 && (
               <div style={styles.card}>
                 <div style={styles.cardTitle}>📋 프로필 선택</div>
-
-                {/* 프로필 드롭다운 */}
                 <select
                   value={selectedProfileId}
                   onChange={e => {
@@ -284,7 +405,6 @@ export default function Home() {
                   ))}
                 </select>
 
-                {/* 해시태그 그룹 */}
                 {selectedProfile?.hashtag_groups?.length > 0 && (
                   <div style={{ marginBottom: '16px' }}>
                     <div style={{ fontSize: '0.83rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '8px' }}>
@@ -316,7 +436,6 @@ export default function Home() {
                   </div>
                 )}
 
-                {/* 블로그 서명 */}
                 {selectedProfile?.blog_signatures?.length > 0 && (
                   <div>
                     <div style={{ fontSize: '0.83rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '8px' }}>
@@ -350,10 +469,6 @@ export default function Home() {
                 signature={selectedSig}
               />
             </div>
-            <button style={{ ...styles.generateBtn, background: 'var(--bg-hover)', color: 'var(--text-secondary)' }}
-              onClick={reset}>
-              + 새 포스트 만들기
-            </button>
           </>
         )
       })()}
