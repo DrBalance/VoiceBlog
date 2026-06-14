@@ -126,7 +126,7 @@ const CONTENT_LENGTHS = [
 
 const MAX_CHARS = 1000
 
-export default function OptionPanel({ options, onChange, transcriptLength = 0 }) {
+export default function OptionPanel({ options, onChange, transcriptLength = 0, prevImageCount = 0, reuseImages = false, onReuseImagesChange }) {
   const { imageCount, imageSource, tone, contentLength = 'normal', useWebSearch = false } = options
   const [customStyles, setCustomStyles] = useState([])
   const [showModal, setShowModal] = useState(false)
@@ -255,6 +255,22 @@ export default function OptionPanel({ options, onChange, transcriptLength = 0 })
             </span>
           )}
         </div>
+
+        {/* 이전 이미지 재사용 */}
+        {prevImageCount > 0 && imageCount > 0 && (
+          <label style={{
+            display: 'flex', alignItems: 'center', gap: '10px',
+            marginTop: '10px', padding: '10px 12px', borderRadius: '8px', cursor: 'pointer',
+            background: reuseImages ? 'var(--accent-dim)' : 'var(--bg-hover)',
+            border: `1px solid ${reuseImages ? 'var(--accent)' : 'var(--border)'}`,
+            fontSize: '0.85rem', color: 'var(--text-secondary)',
+          }}>
+            <input type='checkbox' checked={reuseImages}
+              onChange={e => onReuseImagesChange?.(e.target.checked)}
+              style={{ width: '15px', height: '15px', cursor: 'pointer', flexShrink: 0 }} />
+            이전에 생성된 이미지 {prevImageCount}장 재사용 (새로 생성하지 않음)
+          </label>
+        )}
       </div>
 
       {/* 이미지 소스 */}
@@ -287,7 +303,6 @@ export default function OptionPanel({ options, onChange, transcriptLength = 0 })
             <button key={s.id} style={styles.optBtn(tone === s.id)}
               onClick={() => onChange({ ...options, tone: s.id })}>
               <span>{s.name}</span>
-              <button style={styles.deleteBtn} onClick={(e) => handleDelete(e, s.id)}>✕</button>
               <div style={{ fontSize: '0.75rem', opacity: 0.7 }}>{s.description}</div>
             </button>
           ))}

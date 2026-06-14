@@ -337,25 +337,18 @@ export default function Home() {
             </div>
           )}
 
-          {/* 이전 이미지 재사용 */}
-          {images.length > 0 && (
-            <div style={{
-              padding: '12px 16px', borderRadius: '8px', marginBottom: '16px',
-              background: 'var(--bg-hover)', border: '1px solid var(--border)',
-              display: 'flex', alignItems: 'center', gap: '12px',
-            }}>
-              <input type='checkbox' id='reuseImages' checked={reuseImages}
-                onChange={e => setReuseImages(e.target.checked)}
-                style={{ width: '16px', height: '16px', cursor: 'pointer' }} />
-              <label htmlFor='reuseImages' style={{ fontSize: '0.88rem', color: 'var(--text-secondary)', cursor: 'pointer' }}>
-                이전에 생성된 이미지 {images.length}장 재사용 (새로 생성하지 않음)
-              </label>
-            </div>
-          )}
+          {/* 이전 이미지 재사용 — OptionPanel 내부로 이동 */}
 
           <div style={styles.card}>
             <div style={styles.cardTitle}>생성 옵션</div>
-            <OptionPanel options={options} onChange={setOptions} transcriptLength={transcript.length} />
+            <OptionPanel
+              options={options}
+              onChange={setOptions}
+              transcriptLength={transcript.length}
+              prevImageCount={images.length}
+              reuseImages={reuseImages}
+              onReuseImagesChange={setReuseImages}
+            />
           </div>
           <div style={{ display: 'flex', gap: '12px' }}>
             <button style={{ ...styles.generateBtn, flex: '0 0 auto', width: 'auto', padding: '16px 24px', background: 'var(--bg-hover)', color: 'var(--text-secondary)' }}
