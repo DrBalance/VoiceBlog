@@ -105,20 +105,23 @@ const styles = {
 
 // 마크다운을 IMAGE_PLACEHOLDER 기준으로 구간 분할
 function splitMarkdownByImages(markdown, images) {
+  // --- 구분선 앞뒤에 빈 줄 보장 (ReactMarkdown이 hr로 인식하도록)
+  const normalized = markdown.replace(/\n(---+)\n/g, '\n\n$1\n\n')
+
   const placeholderPattern = /!\[[^\]]*\]\(IMAGE_PLACEHOLDER_(\d+)\)/g
   const parts = []
   let lastIndex = 0
   let match
 
-  while ((match = placeholderPattern.exec(markdown)) !== null) {
+  while ((match = placeholderPattern.exec(normalized)) !== null) {
     const imgIndex = parseInt(match[1]) - 1
-    const textBefore = markdown.slice(lastIndex, match.index)
+    const textBefore = normalized.slice(lastIndex, match.index)
     parts.push({ text: textBefore, image: images[imgIndex] || null, imageIndex: imgIndex + 1 })
     lastIndex = match.index + match[0].length
   }
 
   // 마지막 텍스트 구간
-  const remaining = markdown.slice(lastIndex)
+  const remaining = normalized.slice(lastIndex)
   if (remaining.trim()) {
     parts.push({ text: remaining, image: null, imageIndex: null })
   }

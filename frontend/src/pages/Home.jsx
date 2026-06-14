@@ -81,9 +81,17 @@ const styles = {
 }
 
 // 프로그레스바 컴포넌트
-function ProgressBar({ label, expectedSec, retryCount }) {
+function ProgressBar({ label, expectedSec, phase }) {
   const [elapsed, setElapsed] = useState(0)
   const startRef = useRef(Date.now())
+  const [retryCount, setRetryCount] = useState(0)
+
+  // phase가 바뀌면 타이머 리셋
+  useEffect(() => {
+    startRef.current = Date.now()
+    setElapsed(0)
+    setRetryCount(0)
+  }, [phase])
 
   useEffect(() => {
     startRef.current = Date.now()
@@ -95,7 +103,14 @@ function ProgressBar({ label, expectedSec, retryCount }) {
       setElapsed(Math.floor((Date.now() - startRef.current) / 1000))
     }, 500)
     return () => clearInterval(timer)
-  }, [retryCount])
+  }, [retryCount, phase])
+
+  // 예상시간 초과 시 자동 재시작
+  useEffect(() => {
+    if (elapsed < expectedSec) return
+    const timer = setTimeout(() => setRetryCount(c => c + 1), 500)
+    return () => clearTimeout(timer)
+  }, [elapsed, expectedSec])
 
   const pct = (elapsed / expectedSec) * 100
   const isOverdue = elapsed >= expectedSec
@@ -133,8 +148,7 @@ export default function Home() {
     imageCount: 3, imageSource: 'dalle', tone: 'informative',
     contentLength: 'normal', useWebSearch: false,
   })
-  const [progressPhase, setProgressPhase] = useState('blog') // 'blog' | 'image'
-  const [retryCount, setRetryCount] = useState(0)
+  const [progressPhase, setProgressPhase] = useState('blog')
   const [markdown, setMarkdown] = useState('')
   const [images, setImages] = useState([])
   const [hashtags, setHashtags] = useState({ naver: [], instagram: [] })
@@ -167,21 +181,11 @@ export default function Home() {
   // 프로그레스바 예상 시간 (재시도 시 리셋)
   const expectedSec = calcExpectedTime(options, progressPhase)
 
-  // 예상시간 초과 감지 → retryCount 증가로 바 리셋
-  useEffect(() => {
-    if (step !== 2) return
-    const timer = setTimeout(() => {
-      setRetryCount(c => c + 1)
-    }, expectedSec * 1000 + 500)
-    return () => clearTimeout(timer)
-  }, [step, retryCount, expectedSec])
-
   async function handleGenerate(prevMarkdown = '') {
     if (!audioFile && !transcript) return
     setError('')
     setStep(2)
     setProgressPhase('blog')
-    setRetryCount(0)
 
     try {
       let text = transcript
@@ -207,7 +211,6 @@ export default function Home() {
 
       if (options.imageCount > 0 && !reuseImages) {
         setProgressPhase('image')
-        setRetryCount(0) // 이미지 단계 시작 시 프로그레스바 리셋
         const { images: imgs } = await generateImages(generationId, md, options)
         setImages(imgs)
       } else if (reuseImages) {
@@ -370,7 +373,7 @@ export default function Home() {
           <ProgressBar
             label={progressLabel}
             expectedSec={progressPhase === 'stt' ? 15 : expectedSec}
-            retryCount={retryCount}
+            phase={progressPhase}
           />
         </div>
       )}

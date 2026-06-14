@@ -106,7 +106,7 @@ const styles = {
 }
 
 const IMAGE_SOURCES = [
-  { value: 'dalle', label: 'AI 생성', desc: 'DALL·E 3' },
+  { value: 'dalle', label: 'AI 생성', desc: 'gpt-image-1' },
   { value: 'unsplash', label: '스톡 사진', desc: 'Unsplash' },
 ]
 
