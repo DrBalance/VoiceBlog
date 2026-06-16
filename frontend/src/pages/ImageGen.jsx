@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { generateCardImage } from '../services/api'
 
 // ── 스타일 상수 ──────────────────────────────────────────────
@@ -62,6 +62,31 @@ const s = {
     fontFamily: 'inherit', boxSizing: 'border-box',
   },
 
+  // 참고이미지 드롭존
+  dropzone: (isDragging, hasFile) => ({
+    border: `2px dashed ${isDragging ? 'var(--accent)' : hasFile ? 'var(--accent)' : 'var(--border)'}`,
+    borderRadius: '12px', padding: '20px',
+    background: isDragging ? 'var(--accent-dim)' : hasFile ? 'rgba(255,255,255,0.02)' : 'transparent',
+    textAlign: 'center', cursor: 'pointer', transition: 'all 0.2s',
+  }),
+  dropzoneText: { color: 'var(--text-muted)', fontSize: '0.88rem', marginBottom: '8px' },
+  dropzoneHint: { color: 'var(--text-muted)', fontSize: '0.78rem', opacity: 0.6 },
+  refImgPreviewWrap: {
+    display: 'flex', alignItems: 'center', gap: '14px',
+  },
+  refImgPreview: {
+    width: '80px', height: '80px', objectFit: 'cover',
+    borderRadius: '8px', border: '1px solid var(--border)', flexShrink: 0,
+  },
+  refImgInfo: { flex: 1, textAlign: 'left' },
+  refImgName: { fontSize: '0.85rem', color: 'var(--text-primary)', marginBottom: '4px' },
+  refImgDesc: { fontSize: '0.78rem', color: 'var(--accent)' },
+  removeBtn: {
+    padding: '6px 12px', borderRadius: '8px', fontSize: '0.8rem',
+    color: '#ff6b6b', background: 'rgba(255,80,80,0.08)',
+    border: '1px solid rgba(255,80,80,0.3)', cursor: 'pointer', flexShrink: 0,
+  },
+
   optionRow: { display: 'flex', gap: '10px', flexWrap: 'wrap' },
   optionBtn: (active) => ({
     flex: 1, minWidth: '80px', padding: '10px 8px', borderRadius: '10px',
@@ -87,7 +112,7 @@ const s = {
     background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)',
     borderRadius: '8px', fontSize: '0.78rem', color: 'var(--text-muted)',
     lineHeight: 1.6, whiteSpace: 'pre-wrap', maxHeight: '120px',
-    overflow: 'hidden', position: 'relative',
+    overflow: 'hidden',
   },
   promptToggle: {
     fontSize: '0.8rem', color: 'var(--accent)', cursor: 'pointer',
@@ -132,6 +157,12 @@ const s = {
     border: '1px solid var(--accent)', backdropFilter: 'blur(6px)',
   },
 
+  badge: {
+    display: 'inline-block', padding: '2px 8px', borderRadius: '6px',
+    fontSize: '0.75rem', fontWeight: 600, marginLeft: '8px',
+    background: 'var(--accent-dim)', color: 'var(--accent)',
+  },
+
   error: {
     padding: '14px', borderRadius: '10px', fontSize: '0.9rem',
     background: 'rgba(255,80,80,0.08)', border: '1px solid rgba(255,80,80,0.3)',
@@ -141,24 +172,47 @@ const s = {
 
 // ── 컴포넌트 ──────────────────────────────────────────────────
 export default function ImageGen() {
-  const [scene, setScene]       = useState('')
-  const [korText, setKorText]   = useState('')
-  const [count, setCount]       = useState(1)
-  const [size, setSize]         = useState('1024x1024')
-  const [quality, setQuality]   = useState('medium')
+  const [scene, setScene]         = useState('')
+  const [korText, setKorText]     = useState('')
+  const [refImage, setRefImage]   = useState(null)   // { file, previewUrl }
+  const [isDragging, setIsDragging] = useState(false)
+  const [count, setCount]         = useState(1)
+  const [size, setSize]           = useState('1024x1024')
+  const [quality, setQuality]     = useState('medium')
   const [showPrompt, setShowPrompt] = useState(false)
-  const [loading, setLoading]   = useState(false)
-  const [images, setImages]     = useState([])
-  const [error, setError]       = useState('')
+  const [loading, setLoading]     = useState(false)
+  const [images, setImages]       = useState([])
+  const [error, setError]         = useState('')
+  const fileInputRef              = useRef(null)
 
   // 최종 프롬프트 조합
   const buildPrompt = () => {
     let p = STYLE_PROMPT
+    if (refImage) p += `\n\nA reference image is provided — match its illustration style exactly.`
     if (scene.trim())   p += `\n\nScene to illustrate: ${scene.trim()}`
     if (korText.trim()) p += `\nKorean text to include: "${korText.trim()}"`
     return p
   }
 
+  // 파일 처리
+  const handleFile = (file) => {
+    if (!file || !file.type.startsWith('image/')) return
+    const previewUrl = URL.createObjectURL(file)
+    setRefImage({ file, previewUrl })
+  }
+
+  const handleDrop = (e) => {
+    e.preventDefault()
+    setIsDragging(false)
+    handleFile(e.dataTransfer.files[0])
+  }
+
+  const handleRemoveRef = () => {
+    if (refImage?.previewUrl) URL.revokeObjectURL(refImage.previewUrl)
+    setRefImage(null)
+  }
+
+  // 생성 요청 — 참고이미지가 있으면 FormData, 없으면 JSON
   const handleGenerate = async () => {
     if (!scene.trim()) return
     setError('')
@@ -171,6 +225,7 @@ export default function ImageGen() {
         count,
         size,
         quality,
+        refImageFile: refImage?.file ?? null,
       })
       setImages(result.images || [])
     } catch (e) {
@@ -180,7 +235,7 @@ export default function ImageGen() {
     }
   }
 
-  const handleDownload = async (url, index) => {
+  const handleDownload = (url, index) => {
     const a = document.createElement('a')
     a.href = url
     a.download = `card_${Date.now()}_${index + 1}.png`
@@ -191,11 +246,11 @@ export default function ImageGen() {
 
   return (
     <div style={s.page}>
+      <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+
       {/* 헤더 */}
       <div style={s.header}>
-        <h1 style={s.title}>
-          Card<span style={s.titleAccent}>Image</span>
-        </h1>
+        <h1 style={s.title}>Card<span style={s.titleAccent}>Image</span></h1>
         <p style={s.subtitle}>Dr. Balance 카드뉴스 일러스트 생성기</p>
       </div>
 
@@ -221,11 +276,45 @@ export default function ImageGen() {
         />
       </div>
 
+      {/* 참고이미지 */}
+      <div style={s.card}>
+        <div style={s.cardTitle}>
+          참고 이미지 (선택)
+          {refImage && <span style={s.badge}>스타일 참조 ON</span>}
+        </div>
+
+        {refImage ? (
+          <div style={s.refImgPreviewWrap}>
+            <img src={refImage.previewUrl} alt="참고이미지" style={s.refImgPreview} />
+            <div style={s.refImgInfo}>
+              <div style={s.refImgName}>{refImage.file.name}</div>
+              <div style={s.refImgDesc}>이 이미지의 스타일을 참고해서 생성합니다</div>
+            </div>
+            <button style={s.removeBtn} onClick={handleRemoveRef}>제거</button>
+          </div>
+        ) : (
+          <div
+            style={s.dropzone(isDragging, false)}
+            onClick={() => fileInputRef.current?.click()}
+            onDragOver={e => { e.preventDefault(); setIsDragging(true) }}
+            onDragLeave={() => setIsDragging(false)}
+            onDrop={handleDrop}
+          >
+            <div style={s.dropzoneText}>🖼 이미지를 드래그하거나 클릭해서 업로드</div>
+            <div style={s.dropzoneHint}>PNG, JPG 지원 · 이전에 생성한 이미지를 붙이면 스타일이 더 일관됩니다</div>
+          </div>
+        )}
+        <input
+          ref={fileInputRef} type="file" accept="image/*"
+          style={{ display: 'none' }}
+          onChange={e => handleFile(e.target.files[0])}
+        />
+      </div>
+
       {/* 옵션 */}
       <div style={s.card}>
         <div style={s.cardTitle}>옵션</div>
 
-        {/* 수량 */}
         <div style={{ marginBottom: '20px' }}>
           <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '10px' }}>수량</div>
           <div style={s.countRow}>
@@ -235,7 +324,6 @@ export default function ImageGen() {
           </div>
         </div>
 
-        {/* 사이즈 */}
         <div style={{ marginBottom: '20px' }}>
           <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '10px' }}>사이즈</div>
           <div style={s.optionRow}>
@@ -247,7 +335,6 @@ export default function ImageGen() {
           </div>
         </div>
 
-        {/* 품질 */}
         <div>
           <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '10px' }}>품질</div>
           <div style={s.optionRow}>
@@ -266,9 +353,7 @@ export default function ImageGen() {
         <button style={s.promptToggle} onClick={() => setShowPrompt(v => !v)}>
           {showPrompt ? '▲ 스타일 프롬프트 숨기기' : '▼ 스타일 프롬프트 보기'}
         </button>
-        {showPrompt && (
-          <div style={s.promptPreview}>{buildPrompt()}</div>
-        )}
+        {showPrompt && <div style={s.promptPreview}>{buildPrompt()}</div>}
       </div>
 
       {/* 에러 */}
@@ -280,15 +365,16 @@ export default function ImageGen() {
         onClick={handleGenerate}
         disabled={!canGenerate}
       >
-        {loading ? '생성 중...' : `이미지 생성 (${count}장)`}
+        {loading ? '생성 중...' : `이미지 생성 (${count}장)${refImage ? ' · 스타일 참조' : ''}`}
       </button>
 
       {/* 로딩 */}
       {loading && (
         <div style={s.progressWrap}>
-          <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
           <div style={s.spinner} />
-          <div style={s.progressText}>gpt-image-1 생성 중... 잠시만 기다려 주세요</div>
+          <div style={s.progressText}>
+            {refImage ? '참고 이미지 스타일 분석 중...' : 'gpt-image-1 생성 중...'} 잠시만 기다려 주세요
+          </div>
         </div>
       )}
 
