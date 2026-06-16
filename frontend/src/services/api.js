@@ -202,15 +202,34 @@ export async function deleteSignature(sigId) {
 
 // ─── 카드뉴스 이미지 생성 (ImageGen) ─────────────────
 
-export async function generateCardImage({ prompt, count, size, quality }) {
+export async function generateCardImage({ prompt, count, size, quality, refImageFile }) {
   const headers = await getAuthHeader()
-  const res = await fetch(`${API_URL}/api/imagegen/generate`, {
-    method: 'POST',
-    headers: { ...headers, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt, count, size, quality }),
-  })
-  if (!res.ok) throw new Error((await res.json()).error)
-  return res.json()
+
+  // 참고이미지가 있으면 multipart/form-data, 없으면 JSON
+  if (refImageFile) {
+    const formData = new FormData()
+    formData.append('prompt', prompt)
+    formData.append('count', count)
+    formData.append('size', size)
+    formData.append('quality', quality)
+    formData.append('refImage', refImageFile)
+
+    const res = await fetch(`${API_URL}/api/imagegen/generate`, {
+      method: 'POST',
+      headers, // Content-Type은 FormData가 자동으로 설정
+      body: formData,
+    })
+    if (!res.ok) throw new Error((await res.json()).error)
+    return res.json()
+  } else {
+    const res = await fetch(`${API_URL}/api/imagegen/generate`, {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt, count, size, quality }),
+    })
+    if (!res.ok) throw new Error((await res.json()).error)
+    return res.json()
+  }
 }
 
 // 전체 이미지 라이브러리
