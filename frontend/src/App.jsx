@@ -5,6 +5,9 @@ import Home from './pages/Home'
 import Login from './pages/Login'
 import History from './pages/History'
 import Settings from './pages/Settings'
+import ImageGen from './pages/ImageGen'
+
+const OWNER_EMAIL = 'drbalance@naver.com'
 
 const styles = {
   nav: {
@@ -54,6 +57,8 @@ export default function App() {
 
   if (!session) return <Login />
 
+  const isOwner = session.user.email === OWNER_EMAIL
+
   return (
     <>
       <nav style={styles.nav}>
@@ -70,6 +75,11 @@ export default function App() {
           <Link to="/settings" style={{ ...styles.navLink(location.pathname === '/settings'), textDecoration: 'none' }}>
             설정
           </Link>
+          {isOwner && (
+            <Link to="/imagegen" style={{ ...styles.navLink(location.pathname === '/imagegen'), textDecoration: 'none' }}>
+              카드이미지
+            </Link>
+          )}
           <button style={styles.logoutBtn} onClick={() => supabase.auth.signOut()}>
             로그아웃
           </button>
@@ -80,6 +90,7 @@ export default function App() {
           <Route path="/" element={<Home />} />
           <Route path="/history" element={<History />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/imagegen" element={<ImageGen />} />
         </Routes>
       </main>
     </>

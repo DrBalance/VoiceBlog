@@ -200,6 +200,19 @@ export async function deleteSignature(sigId) {
   return res.json()
 }
 
+// ─── 카드뉴스 이미지 생성 (ImageGen) ─────────────────
+
+export async function generateCardImage({ prompt, count, size, quality }) {
+  const headers = await getAuthHeader()
+  const res = await fetch(`${API_URL}/api/imagegen/generate`, {
+    method: 'POST',
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prompt, count, size, quality }),
+  })
+  if (!res.ok) throw new Error((await res.json()).error)
+  return res.json()
+}
+
 // 전체 이미지 라이브러리
 export async function getAllImages() {
   const headers = await getAuthHeader()
