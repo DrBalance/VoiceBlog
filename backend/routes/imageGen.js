@@ -60,7 +60,7 @@ router.post(
           // 참고이미지 있음 → images.edit 사용 (스타일 참조)
           const refFile = bufferToFile(req.file.buffer, req.file.originalname, req.file.mimetype);
           const response = await openai.images.edit({
-            model: 'gpt-image-1',
+            model: 'gpt-image-2',
             image: refFile,
             prompt: prompt.trim(),
             n: 1,
@@ -71,7 +71,7 @@ router.post(
         } else {
           // 참고이미지 없음 → images.generate 사용
           const response = await openai.images.generate({
-            model: 'gpt-image-1',
+            model: 'gpt-image-2',
             prompt: prompt.trim(),
             n: 1,
             size,
