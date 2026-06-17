@@ -103,6 +103,48 @@ router.post(
   }
 );
 
+// ── GET /api/imagegen/style-image ────────────────────────────
+router.get('/style-image', authMiddleware, privateOnly, async (req, res, next) => {
+  try {
+    const { data: publicUrlData } = supabase.storage
+      .from('blog-images')
+      .getPublicUrl(`imagegen/${req.user.id}/style_reference.png`);
+
+    // 파일 존재 여부 확인
+    const { data, error } = await supabase.storage
+      .from('blog-images')
+      .list(`imagegen/${req.user.id}`, { search: 'style_reference.png' });
+
+    if (error || !data?.length) return res.json({ url: null });
+    res.json({ url: publicUrlData.publicUrl });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── POST /api/imagegen/style-image ───────────────────────────
+router.post(
+  '/style-image',
+  authMiddleware,
+  privateOnly,
+  upload.single('styleImage'),
+  async (req, res, next) => {
+    if (!req.file) return res.status(400).json({ error: '이미지가 필요합니다.' });
+    try {
+      const storagePath = `imagegen/${req.user.id}/style_reference.png`;
+      const { error } = await supabase.storage
+        .from('blog-images')
+        .upload(storagePath, req.file.buffer, { contentType: 'image/png', upsert: true });
+
+      if (error) throw error;
+      const { data } = supabase.storage.from('blog-images').getPublicUrl(storagePath);
+      res.json({ url: data.publicUrl });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
 // ── POST /api/imagegen/hashtags ──────────────────────────────
 router.post('/hashtags', authMiddleware, privateOnly, async (req, res, next) => {
   const { scene, korText } = req.body;
