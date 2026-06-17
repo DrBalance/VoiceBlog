@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { generateCardImage, getImageGenHistory, deleteImageGenHistory } from '../services/api'
+import { generateCardImage, getImageGenHistory, deleteImageGenHistory, generateCardHashtags } from '../services/api'
 
 const STYLE_PROMPT = `Illustration style: Korean webtoon / SNS health card news style.
 Image size: 1254 x 1254px, square format (1:1 ratio).
@@ -127,6 +127,8 @@ export default function ImageGen() {
   const [showPrompt, setShowPrompt] = useState(false)
   const [loading, setLoading]     = useState(false)
   const [images, setImages]       = useState([])
+  const [hashtags, setHashtags]   = useState([])
+  const [copied, setCopied]       = useState(false)
   const [error, setError]         = useState('')
   const [history, setHistory]     = useState([])
   const [historyLoading, setHistoryLoading] = useState(false)
@@ -150,15 +152,27 @@ export default function ImageGen() {
 
   const handleGenerate = async () => {
     if (!scene.trim()) return
-    setError(''); setLoading(true); setImages([])
+    setError(''); setLoading(true); setImages([]); setHashtags([]); setCopied(false)
     try {
-      const result = await generateCardImage({ prompt: buildPrompt(), count, size, quality, scene, korText, refImageFile: refImage?.file ?? null })
+      // 이미지 생성 + 해시태그 생성 병렬 처리
+      const [result, hashtagResult] = await Promise.all([
+        generateCardImage({ prompt: buildPrompt(), count, size, quality, scene, korText, refImageFile: refImage?.file ?? null }),
+        generateCardHashtags(scene, korText),
+      ])
       setImages(result.images || [])
+      setHashtags(hashtagResult.hashtags || [])
     } catch (e) {
       setError(e.message || '이미지 생성 중 오류가 발생했습니다.')
     } finally {
       setLoading(false)
     }
+  }
+
+  const handleCopyHashtags = () => {
+    const text = hashtags.join(' ')
+    navigator.clipboard.writeText(text)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
   }
 
   const loadHistory = async () => {
@@ -283,6 +297,28 @@ export default function ImageGen() {
                   </div>
                 ))}
               </div>
+
+              {/* 해시태그 */}
+              {hashtags.length > 0 && (
+                <div style={{ marginTop: '20px', padding: '20px', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '14px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                    <div style={s.cardTitle}>인스타그램 해시태그</div>
+                    <button
+                      style={{ padding: '6px 14px', borderRadius: '8px', fontSize: '0.82rem', fontWeight: 600, cursor: 'pointer', background: copied ? 'var(--accent)' : 'var(--accent-dim)', color: copied ? '#0e0e0e' : 'var(--accent)', border: '1px solid var(--accent)', transition: 'all 0.2s' }}
+                      onClick={handleCopyHashtags}
+                    >
+                      {copied ? '✓ 복사됨' : '복사'}
+                    </button>
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                    {hashtags.map((tag, i) => (
+                      <span key={i} style={{ padding: '6px 12px', borderRadius: '20px', fontSize: '0.88rem', background: i === 0 ? 'var(--accent)' : 'rgba(255,255,255,0.06)', color: i === 0 ? '#0e0e0e' : 'var(--accent)', fontWeight: i === 0 ? 700 : 400, border: `1px solid ${i === 0 ? 'var(--accent)' : 'var(--border)'}` }}>
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </>
