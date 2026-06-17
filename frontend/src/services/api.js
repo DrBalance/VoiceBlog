@@ -223,6 +223,17 @@ export async function generateCardImage({ prompt, count, size, quality, scene, k
   return res.json()
 }
 
+export async function generateCardHashtags(scene, korText) {
+  const headers = await getAuthHeader()
+  const res = await fetch(`${API_URL}/api/imagegen/hashtags`, {
+    method: 'POST',
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ scene, korText }),
+  })
+  if (!res.ok) throw new Error((await res.json()).error)
+  return res.json()
+}
+
 export async function getImageGenHistory() {
   const headers = await getAuthHeader()
   const res = await fetch(`${API_URL}/api/imagegen/history`, { headers })
