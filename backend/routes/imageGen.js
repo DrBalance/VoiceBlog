@@ -103,6 +103,46 @@ router.post(
   }
 );
 
+// ── POST /api/imagegen/hashtags ──────────────────────────────
+router.post('/hashtags', authMiddleware, privateOnly, async (req, res, next) => {
+  const { scene, korText } = req.body;
+
+  if (!scene) return res.status(400).json({ error: 'scene이 필요합니다.' });
+
+  try {
+    const Anthropic = require('@anthropic-ai/sdk');
+    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+    const message = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 200,
+      messages: [{
+        role: 'user',
+        content: `다음 한의원 카드뉴스 콘텐츠에 맞는 인스타그램 해시태그를 생성해주세요.
+
+장면 설명: ${scene}
+${korText ? `이미지 텍스트: ${korText}` : ''}
+
+규칙:
+- 총 5개 생성
+- 첫 번째는 반드시 #테이프침 (고정)
+- 나머지 4개는 콘텐츠에 맞는 한국어 해시태그
+- 너무 일반적인 태그(#건강 #운동 등)보다 구체적이고 타겟이 명확한 태그
+- 한의원/테이프침/Dr.Balance 브랜드 맥락에 맞게
+- JSON 배열로만 응답: ["#테이프침", "#태그2", "#태그3", "#태그4", "#태그5"]`
+      }]
+    });
+
+    const text = message.content[0].text.trim();
+    const hashtags = JSON.parse(text);
+    res.json({ hashtags });
+  } catch (err) {
+    console.error('[ImageGen] 해시태그 생성 오류:', err.message);
+    // 실패해도 기본값 반환
+    res.json({ hashtags: ['#테이프침', '#한의원', '#Dr_Balance', '#붓기', '#통증'] });
+  }
+});
+
 // ── GET /api/imagegen/history ─────────────────────────────────
 router.get('/history', authMiddleware, privateOnly, async (req, res, next) => {
   try {
