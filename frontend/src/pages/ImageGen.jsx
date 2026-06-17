@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { generateCardImage, getImageGenHistory, deleteImageGenHistory, generateCardHashtags } from '../services/api'
+import { generateCardImage, getImageGenHistory, deleteImageGenHistory, generateCardHashtags, getStyleImage, uploadStyleImage } from '../services/api'
 
 const STYLE_PROMPT = `Illustration style: Korean webtoon / SNS health card news style.
 Image size: 1254 x 1254px, square format (1:1 ratio).
@@ -116,10 +116,11 @@ async function downloadImage(url, filename) {
 
 // ── 메인 컴포넌트 ─────────────────────────────────────────────
 export default function ImageGen() {
-  const [tab, setTab]             = useState('generate') // 'generate' | 'history'
+  const [tab, setTab]             = useState('generate')
   const [scene, setScene]         = useState('')
   const [korText, setKorText]     = useState('')
-  const [refImage, setRefImage]   = useState(null)
+  const [refImage, setRefImage]   = useState(null)       // 이번 세션 업로드
+  const [savedStyleUrl, setSavedStyleUrl] = useState(null) // Supabase 저장 이미지 URL
   const [isDragging, setIsDragging] = useState(false)
   const [count, setCount]         = useState(1)
   const [size, setSize]           = useState('1024x1024')
@@ -132,7 +133,20 @@ export default function ImageGen() {
   const [error, setError]         = useState('')
   const [history, setHistory]     = useState([])
   const [historyLoading, setHistoryLoading] = useState(false)
+  const [styleUploading, setStyleUploading] = useState(false)
   const fileInputRef              = useRef(null)
+  const styleInputRef             = useRef(null)
+
+  // 앱 로드 시 저장된 스타일 이미지 불러오기
+  useEffect(() => {
+    getStyleImage().then(data => {
+      if (data?.url) setSavedStyleUrl(data.url)
+    }).catch(() => {})
+  }, [])
+
+  // 실제 사용할 참고이미지: 직접 업로드 > 저장된 스타일 이미지
+  const activeRefFile = refImage?.file ?? null
+  const activeRefUrl  = refImage?.previewUrl ?? savedStyleUrl
 
   const buildPrompt = () => {
     let p = STYLE_PROMPT
@@ -154,9 +168,8 @@ export default function ImageGen() {
     if (!scene.trim()) return
     setError(''); setLoading(true); setImages([]); setHashtags([]); setCopied(false)
     try {
-      // 이미지 생성 + 해시태그 생성 병렬 처리
       const [result, hashtagResult] = await Promise.all([
-        generateCardImage({ prompt: buildPrompt(), count, size, quality, scene, korText, refImageFile: refImage?.file ?? null }),
+        generateCardImage({ prompt: buildPrompt(), count, size, quality, scene, korText, refImageFile: activeRefFile }),
         generateCardHashtags(scene, korText),
       ])
       setImages(result.images || [])
@@ -165,6 +178,20 @@ export default function ImageGen() {
       setError(e.message || '이미지 생성 중 오류가 발생했습니다.')
     } finally {
       setLoading(false)
+    }
+  }
+
+  // 스타일 이미지를 Supabase에 저장
+  const handleSaveStyleImage = async (file) => {
+    setStyleUploading(true)
+    try {
+      const data = await uploadStyleImage(file)
+      setSavedStyleUrl(data.url)
+      setRefImage(null) // 임시 업로드 초기화
+    } catch (e) {
+      alert('저장 실패: ' + e.message)
+    } finally {
+      setStyleUploading(false)
     }
   }
 
@@ -230,26 +257,60 @@ export default function ImageGen() {
           </div>
 
           <div style={s.card}>
-            <div style={s.cardTitle}>
-              참고 이미지 (선택)
-              {refImage && <span style={s.badge}>스타일 참조 ON</span>}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <div style={s.cardTitle}>
+                스타일 참조 이미지
+                {activeRefUrl && <span style={s.badge}>참조 ON</span>}
+              </div>
+              {savedStyleUrl && !refImage && (
+                <button style={{ fontSize: '0.78rem', color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer' }} onClick={() => styleInputRef.current?.click()}>
+                  {styleUploading ? '저장 중...' : '🔄 교체'}
+                </button>
+              )}
             </div>
-            {refImage ? (
+
+            {/* 저장된 스타일 이미지 */}
+            {savedStyleUrl && !refImage && (
+              <div style={s.refImgPreviewWrap}>
+                <img src={savedStyleUrl} alt="저장된 스타일" style={s.refImgPreview} />
+                <div style={s.refImgInfo}>
+                  <div style={s.refImgName}>저장된 스타일 이미지</div>
+                  <div style={s.refImgDesc}>매번 자동으로 참조됩니다 · 교체하려면 오른쪽 상단 버튼 클릭</div>
+                </div>
+              </div>
+            )}
+
+            {/* 이번 세션 업로드 이미지 */}
+            {refImage && (
               <div style={s.refImgPreviewWrap}>
                 <img src={refImage.previewUrl} alt="참고이미지" style={s.refImgPreview} />
                 <div style={s.refImgInfo}>
                   <div style={s.refImgName}>{refImage.file.name}</div>
-                  <div style={s.refImgDesc}>이 이미지의 스타일을 참고해서 생성합니다</div>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--accent)', marginBottom: '6px' }}>이번 생성에만 임시 적용</div>
+                  <button
+                    style={{ fontSize: '0.78rem', color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+                    onClick={() => handleSaveStyleImage(refImage.file)}
+                    disabled={styleUploading}
+                  >
+                    {styleUploading ? '저장 중...' : '💾 기본 스타일로 저장'}
+                  </button>
                 </div>
                 <button style={s.removeBtn} onClick={handleRemoveRef}>제거</button>
               </div>
-            ) : (
+            )}
+
+            {/* 저장 이미지도 없고 임시 업로드도 없을 때 */}
+            {!savedStyleUrl && !refImage && (
               <div style={s.dropzone(isDragging)} onClick={() => fileInputRef.current?.click()} onDragOver={e => { e.preventDefault(); setIsDragging(true) }} onDragLeave={() => setIsDragging(false)} onDrop={handleDrop}>
                 <div style={s.dropzoneText}>🖼 이미지를 드래그하거나 클릭해서 업로드</div>
-                <div style={s.dropzoneHint}>PNG, JPG 지원 · 이전에 생성한 이미지를 붙이면 스타일이 더 일관됩니다</div>
+                <div style={s.dropzoneHint}>한 번 저장하면 다음부터 자동으로 참조됩니다</div>
               </div>
             )}
-            <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={e => handleFile(e.target.files[0])} />
+
+            <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }}
+              onChange={e => handleFile(e.target.files[0])} />
+            <input ref={styleInputRef} type="file" accept="image/*" style={{ display: 'none' }}
+              onChange={e => { if (e.target.files[0]) handleSaveStyleImage(e.target.files[0]) }} />
           </div>
 
           <div style={s.card}>
