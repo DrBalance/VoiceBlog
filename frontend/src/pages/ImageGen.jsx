@@ -278,8 +278,17 @@ export default function ImageGen() {
               <div style={s.grid}>
                 {images.map((img, i) => (
                   <div key={i} style={s.imgWrap}>
-                    <img src={img.url} alt={`생성 이미지 ${i+1}`} style={s.img} />
-                    <button style={s.downloadBtn} onClick={() => downloadImage(img.url, `card_${Date.now()}_${i+1}.png`)}>↓ 다운로드</button>
+                    <img src={img.noBgUrl || img.url} alt={`생성 이미지 ${i+1}`} style={s.img} />
+                    <div style={{ position: 'absolute', bottom: '10px', right: '10px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      {img.noBgUrl && (
+                        <button style={s.downloadBtn} onClick={() => downloadImage(img.noBgUrl, `card_${Date.now()}_${i+1}_nobg.png`)}>
+                          ↓ 투명배경
+                        </button>
+                      )}
+                      <button style={{ ...s.downloadBtn, color: 'var(--text-secondary)', borderColor: 'var(--border)' }} onClick={() => downloadImage(img.url, `card_${Date.now()}_${i+1}_original.png`)}>
+                        ↓ 원본
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -304,7 +313,10 @@ export default function ImageGen() {
                     <div style={s.historyDate}>{new Date(item.created_at).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
                     <div style={s.historyScene}>{item.scene || '(장면 설명 없음)'}</div>
                     <div style={s.historyActions}>
-                      <button style={s.historyDlBtn} onClick={() => downloadImage(item.public_url, `card_${item.id}.png`)}>↓ 다운로드</button>
+                      {item.nobg_url && (
+                        <button style={s.historyDlBtn} onClick={() => downloadImage(item.nobg_url, `card_${item.id}_nobg.png`)}>↓ 투명배경</button>
+                      )}
+                      <button style={{ ...s.historyDlBtn, color: 'var(--text-secondary)', borderColor: 'var(--border)' }} onClick={() => downloadImage(item.public_url, `card_${item.id}_original.png`)}>↓ 원본</button>
                       <button style={s.historyDelBtn} onClick={() => handleDeleteHistory(item.id)}>🗑</button>
                     </div>
                   </div>
