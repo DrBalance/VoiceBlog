@@ -3,7 +3,7 @@ import { generateCardImage, getImageGenHistory, deleteImageGenHistory } from '..
 
 const STYLE_PROMPT = `Illustration style: Korean webtoon / SNS health card news style.
 Image size: 1254 x 1254px, square format (1:1 ratio).
-Solid bright green background (#00FF00), chroma key green screen. Do NOT use transparent or white background.
+White background.
 Simple 2D flat illustration with bold, slightly rough hand-drawn black outlines.
 Minimal flat coloring — warm beige/peach skin tone, soft pink accents, no gradients.
 Slight crayon/sketch texture on lines, imperfect and natural-looking strokes.
