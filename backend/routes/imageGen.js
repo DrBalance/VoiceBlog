@@ -1,19 +1,14 @@
 const express = require('express');
 const OpenAI = require('openai');
 const multer = require('multer');
-const { Readable } = require('stream');
 const { authMiddleware, supabase } = require('../middleware/auth');
 
 const router = express.Router();
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-// multer: 참고이미지 메모리 저장 (최대 10MB)
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
-// 허용된 이메일 목록
-const ALLOWED_EMAILS = [
-  'drbalance@naver.com',
-];
+const ALLOWED_EMAILS = ['drbalance@naver.com'];
 
 function privateOnly(req, res, next) {
   if (!ALLOWED_EMAILS.includes(req.user.email)) {
@@ -22,26 +17,19 @@ function privateOnly(req, res, next) {
   next();
 }
 
-// Buffer → File 객체 변환 (OpenAI SDK용)
 function bufferToFile(buffer, filename, mimeType) {
   const blob = new Blob([buffer], { type: mimeType });
   return new File([blob], filename, { type: mimeType });
 }
 
-// POST /api/imagegen/generate
-// multipart/form-data: { prompt, count, size, quality, refImage? }
+// ── POST /api/imagegen/generate ──────────────────────────────
 router.post(
   '/generate',
   authMiddleware,
   privateOnly,
   upload.single('refImage'),
   async (req, res, next) => {
-    const {
-      prompt,
-      count   = 1,
-      size    = '1024x1024',
-      quality = 'medium',
-    } = req.body;
+    const { prompt, count = 1, size = '1024x1024', quality = 'medium', scene, korText } = req.body;
 
     if (!prompt || prompt.trim().length === 0) {
       return res.status(400).json({ error: 'prompt가 필요합니다.' });
@@ -57,7 +45,6 @@ router.post(
         let b64;
 
         if (hasRefImage) {
-          // 참고이미지 있음 → images.edit 사용 (스타일 참조)
           const refFile = bufferToFile(req.file.buffer, req.file.originalname, req.file.mimetype);
           const response = await openai.images.edit({
             model: 'gpt-image-2',
@@ -66,16 +53,19 @@ router.post(
             n: 1,
             size,
             quality,
+            background: 'transparent',
+            output_format: 'png',
           });
           b64 = response.data[0].b64_json;
         } else {
-          // 참고이미지 없음 → images.generate 사용
           const response = await openai.images.generate({
             model: 'gpt-image-2',
             prompt: prompt.trim(),
             n: 1,
             size,
             quality,
+            background: 'transparent',
+            output_format: 'png',
           });
           b64 = response.data[0].b64_json;
         }
@@ -94,11 +84,26 @@ router.post(
           continue;
         }
 
-        const { data: publicUrl } = supabase.storage
+        const { data: publicUrlData } = supabase.storage
           .from('blog-images')
           .getPublicUrl(storagePath);
 
-        results.push({ index: i + 1, url: publicUrl.publicUrl, storagePath });
+        const publicUrl = publicUrlData.publicUrl;
+
+        // DB에 이력 저장
+        await supabase.from('imagegen_history').insert({
+          user_id: req.user.id,
+          storage_path: storagePath,
+          public_url: publicUrl,
+          scene: scene || '',
+          kor_text: korText || '',
+          size,
+          quality,
+          has_ref_image: hasRefImage,
+          created_at: new Date().toISOString(),
+        });
+
+        results.push({ index: i + 1, url: publicUrl, storagePath });
       }
 
       res.json({ images: results });
@@ -108,5 +113,46 @@ router.post(
     }
   }
 );
+
+// ── GET /api/imagegen/history ─────────────────────────────────
+router.get('/history', authMiddleware, privateOnly, async (req, res, next) => {
+  try {
+    const { data, error } = await supabase
+      .from('imagegen_history')
+      .select('*')
+      .eq('user_id', req.user.id)
+      .order('created_at', { ascending: false })
+      .limit(100);
+
+    if (error) throw error;
+    res.json({ history: data });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── DELETE /api/imagegen/history/:id ─────────────────────────
+router.delete('/history/:id', authMiddleware, privateOnly, async (req, res, next) => {
+  try {
+    const { data: item } = await supabase
+      .from('imagegen_history')
+      .select('storage_path')
+      .eq('id', req.params.id)
+      .eq('user_id', req.user.id)
+      .single();
+
+    if (item?.storage_path) {
+      await supabase.storage.from('blog-images').remove([item.storage_path]);
+    }
+
+    await supabase.from('imagegen_history').delete()
+      .eq('id', req.params.id)
+      .eq('user_id', req.user.id);
+
+    res.json({ success: true });
+  } catch (err) {
+    next(err);
+  }
+});
 
 module.exports = router;
