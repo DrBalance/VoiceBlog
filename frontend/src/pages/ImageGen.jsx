@@ -3,15 +3,15 @@ import { generateCardImage, getImageGenHistory, deleteImageGenHistory } from '..
 
 const STYLE_PROMPT = `Illustration style: Korean webtoon / SNS health card news style.
 Image size: 1254 x 1254px, square format (1:1 ratio).
-Transparent background (PNG, no background).
+Solid bright green background (#00FF00), chroma key green screen. Do NOT use transparent or white background.
 Simple 2D flat illustration with bold, slightly rough hand-drawn black outlines.
 Minimal flat coloring — warm beige/peach skin tone, soft pink accents, no gradients.
 Slight crayon/sketch texture on lines, imperfect and natural-looking strokes.
 Cute, simplified rounded character design (Korean SNS style).
-Korean handwritten-style white/light gray text in upper-left corner.
+Korean handwritten-style black text in upper-left corner.
 Simple white speech bubble with black outline if needed.
 Generous negative space. Object or character placed center-right.
-No background elements, no shadows, no complex shading.`
+No shadows, no complex shading.`
 
 const QUALITY_OPTIONS = [
   { value: 'low',    label: '빠름',   desc: '저품질 · 빠른 생성' },
@@ -278,17 +278,8 @@ export default function ImageGen() {
               <div style={s.grid}>
                 {images.map((img, i) => (
                   <div key={i} style={s.imgWrap}>
-                    <img src={img.noBgUrl || img.url} alt={`생성 이미지 ${i+1}`} style={s.img} />
-                    <div style={{ position: 'absolute', bottom: '10px', right: '10px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                      {img.noBgUrl && (
-                        <button style={s.downloadBtn} onClick={() => downloadImage(img.noBgUrl, `card_${Date.now()}_${i+1}_nobg.png`)}>
-                          ↓ 투명배경
-                        </button>
-                      )}
-                      <button style={{ ...s.downloadBtn, color: 'var(--text-secondary)', borderColor: 'var(--border)' }} onClick={() => downloadImage(img.url, `card_${Date.now()}_${i+1}_original.png`)}>
-                        ↓ 원본
-                      </button>
-                    </div>
+                    <img src={img.url} alt={`생성 이미지 ${i+1}`} style={s.img} />
+                    <button style={s.downloadBtn} onClick={() => downloadImage(img.url, `card_${Date.now()}_${i+1}.png`)}>↓ 다운로드</button>
                   </div>
                 ))}
               </div>
@@ -313,10 +304,7 @@ export default function ImageGen() {
                     <div style={s.historyDate}>{new Date(item.created_at).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
                     <div style={s.historyScene}>{item.scene || '(장면 설명 없음)'}</div>
                     <div style={s.historyActions}>
-                      {item.nobg_url && (
-                        <button style={s.historyDlBtn} onClick={() => downloadImage(item.nobg_url, `card_${item.id}_nobg.png`)}>↓ 투명배경</button>
-                      )}
-                      <button style={{ ...s.historyDlBtn, color: 'var(--text-secondary)', borderColor: 'var(--border)' }} onClick={() => downloadImage(item.public_url, `card_${item.id}_original.png`)}>↓ 원본</button>
+                      <button style={s.historyDlBtn} onClick={() => downloadImage(item.public_url, `card_${item.id}.png`)}>↓ 다운로드</button>
                       <button style={s.historyDelBtn} onClick={() => handleDeleteHistory(item.id)}>🗑</button>
                     </div>
                   </div>
