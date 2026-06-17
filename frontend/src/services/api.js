@@ -223,6 +223,26 @@ export async function generateCardImage({ prompt, count, size, quality, scene, k
   return res.json()
 }
 
+export async function getStyleImage() {
+  const headers = await getAuthHeader()
+  const res = await fetch(`${API_URL}/api/imagegen/style-image`, { headers })
+  if (!res.ok) throw new Error((await res.json()).error)
+  return res.json()
+}
+
+export async function uploadStyleImage(file) {
+  const headers = await getAuthHeader()
+  const formData = new FormData()
+  formData.append('styleImage', file)
+  const res = await fetch(`${API_URL}/api/imagegen/style-image`, {
+    method: 'POST',
+    headers,
+    body: formData,
+  })
+  if (!res.ok) throw new Error((await res.json()).error)
+  return res.json()
+}
+
 export async function generateCardHashtags(scene, korText) {
   const headers = await getAuthHeader()
   const res = await fetch(`${API_URL}/api/imagegen/hashtags`, {
