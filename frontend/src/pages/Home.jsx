@@ -3,21 +3,9 @@ import { useLocation } from 'react-router-dom'
 import AudioInput from '../components/AudioInput'
 import OptionPanel from '../components/OptionPanel'
 import BlogPreview from '../components/BlogPreview'
-import { transcribeAudio, generateBlog, generateImages, getProfiles } from '../services/api'
+import { transcribeAudio, generateBlog, getProfiles } from '../services/api'
 
 const STEPS = ['음성 입력', '옵션 설정', '생성 중', '결과 확인']
-
-// 예상 시간 계산 (초)
-function calcExpectedTime(options, phase) {
-  if (phase === 'blog') {
-    const base = { short: 20, normal: 30, long: 50, very_long: 80 }[options.contentLength] || 30
-    return base + (options.useWebSearch ? 20 : 0)
-  }
-  if (phase === 'image') {
-    return Math.max(options.imageCount, 1) * 20
-  }
-  return 30
-}
 
 const styles = {
   page: { maxWidth: '800px', margin: '0 auto', padding: '48px 24px' },
@@ -80,40 +68,26 @@ const styles = {
   }),
 }
 
-// 프로그레스바 컴포넌트
-function ProgressBar({ label, expectedSec, phase }) {
-  const [elapsed, setElapsed] = useState(0)
-  const startRef = useRef(Date.now())
-  const [retryCount, setRetryCount] = useState(0)
+// SSE 기반 실시간 프로그레스바
+function ProgressBar({ phase, blogProgress, imageProgress, imageTotal, liveText }) {
+  // phase: 'stt' | 'blog' | 'image'
+  // blogProgress: 0~100 (스트리밍 글자 수 기반)
+  // imageProgress: { current, total }
 
-  // phase가 바뀌면 타이머 리셋
-  useEffect(() => {
-    startRef.current = Date.now()
-    setElapsed(0)
-    setRetryCount(0)
-  }, [phase])
+  const pct = phase === 'blog'
+    ? Math.min(blogProgress, 98)        // 100%는 done 이벤트 후
+    : phase === 'image'
+      ? imageTotal > 0 ? Math.round((imageProgress / imageTotal) * 100) : 0
+      : 30 // stt: 가짜 고정값
 
-  useEffect(() => {
-    startRef.current = Date.now()
-    setElapsed(0)
-  }, [retryCount])
+  const label = {
+    stt: '🎙 음성을 텍스트로 변환하는 중...',
+    blog: '✍️ 블로그 글을 작성하는 중...',
+    image: `🎨 이미지 생성 중... (${imageProgress} / ${imageTotal}장)`,
+  }[phase] || '처리 중...'
 
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setElapsed(Math.floor((Date.now() - startRef.current) / 1000))
-    }, 500)
-    return () => clearInterval(timer)
-  }, [retryCount, phase])
-
-  // 예상시간 초과 시 자동 재시작
-  useEffect(() => {
-    if (elapsed < expectedSec) return
-    const timer = setTimeout(() => setRetryCount(c => c + 1), 500)
-    return () => clearTimeout(timer)
-  }, [elapsed, expectedSec])
-
-  const pct = (elapsed / expectedSec) * 100
-  const isOverdue = elapsed >= expectedSec
+  // 실시간 타이핑 미리보기 (처음 120자)
+  const preview = liveText ? liveText.slice(0, 120).replace(/\n/g, ' ') : ''
 
   return (
     <div style={styles.progressWrap}>
@@ -124,16 +98,25 @@ function ProgressBar({ label, expectedSec, phase }) {
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px' }}>
           <span style={styles.progressSub}>
-            {isOverdue
-              ? '⏳ 예상보다 오래 걸리고 있습니다...'
-              : `${elapsed}초 경과`}
+            {phase === 'image'
+              ? `${imageProgress} / ${imageTotal}장 완료`
+              : phase === 'blog'
+                ? `${pct}% 작성됨`
+                : 'STT 변환 중...'}
           </span>
-          <span style={styles.progressSub}>예상 {expectedSec}초</span>
+          <span style={styles.progressSub}>{pct}%</span>
         </div>
       </div>
-      {isOverdue && (
-        <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', textAlign: 'center' }}>
-          서버 상태에 따라 더 걸릴 수 있습니다. 잠시만 기다려주세요.
+      {phase === 'blog' && preview && (
+        <div style={{
+          width: '100%', fontSize: '0.8rem', color: 'var(--text-muted)',
+          lineHeight: 1.6, fontFamily: 'var(--font-mono, monospace)',
+          background: 'var(--bg-hover)', borderRadius: '6px', padding: '10px 12px',
+          maxHeight: '60px', overflow: 'hidden',
+          borderLeft: '3px solid var(--accent)',
+        }}>
+          {preview}
+          <span style={{ opacity: 0.5, animation: 'blink 1s step-end infinite' }}>▌</span>
         </div>
       )}
     </div>
@@ -154,6 +137,12 @@ export default function Home() {
   const [hashtags, setHashtags] = useState({ naver: [], instagram: [] })
   const [error, setError] = useState('')
   const [reuseImages, setReuseImages] = useState(false)
+
+  // SSE 실시간 상태
+  const [liveText, setLiveText] = useState('')        // 타이핑 중인 텍스트
+  const [blogChars, setBlogChars] = useState(0)       // 수신된 글자 수
+  const [imageProgress, setImageProgress] = useState(0)
+  const [imageTotal, setImageTotal] = useState(0)
 
   // 프로필 관련
   const [profiles, setProfiles] = useState([])
@@ -178,14 +167,23 @@ export default function Home() {
     }
   }, [location.state])
 
-  // 프로그레스바 예상 시간 (재시도 시 리셋)
-  const expectedSec = calcExpectedTime(options, progressPhase)
+  // 예상 글자 수 (contentLength 기준, 프로그레스 계산용)
+  const expectedChars = {
+    short: 800, normal: 1800, long: 3200, very_long: 5500,
+  }[options.contentLength] || 1800
+
+  // blogProgress: 수신 글자 수 / 예상 글자 수 * 100
+  const blogProgress = Math.min(Math.round((blogChars / expectedChars) * 100), 98)
 
   async function handleGenerate(prevMarkdown = '') {
     if (!audioFile && !transcript) return
     setError('')
     setStep(2)
     setProgressPhase('blog')
+    setLiveText('')
+    setBlogChars(0)
+    setImageProgress(0)
+    setImageTotal(options.imageCount || 0)
 
     try {
       let text = transcript
@@ -204,20 +202,34 @@ export default function Home() {
         customStyleId: isCustomTone ? options.tone : undefined,
         tone: isCustomTone ? 'informative' : options.tone,
         prevMarkdown: prevMarkdown || undefined,
+        // reuseImages면 이미지 생성 안 함
+        imageCount: reuseImages ? 0 : options.imageCount,
       }
-      const { generationId, markdown: md, hashtags: tags } = await generateBlog(text, blogOptions)
+
+      const { generationId, markdown: md, hashtags: tags, images: imgs } = await generateBlog(
+        text,
+        blogOptions,
+        {
+          onProgress: (data) => {
+            if (data.phase === 'blog' && data.status === 'done') {
+              setBlogChars(c => c) // 100% 처리는 done 이벤트
+            }
+            if (data.phase === 'image') {
+              setProgressPhase('image')
+              setImageProgress(data.current ?? 0)
+              setImageTotal(data.total ?? options.imageCount)
+            }
+          },
+          onBlogChunk: (chunk) => {
+            setLiveText(prev => prev + chunk)
+            setBlogChars(prev => prev + chunk.length)
+          },
+        },
+      )
+
       setMarkdown(md)
       setHashtags(tags || { naver: [], instagram: [] })
-
-      if (options.imageCount > 0 && !reuseImages) {
-        setProgressPhase('image')
-        const { images: imgs } = await generateImages(generationId, md, options)
-        setImages(imgs)
-      } else if (reuseImages) {
-        // 이전 이미지 그대로 유지
-      } else {
-        setImages([])
-      }
+      if (!reuseImages) setImages(imgs || [])
 
       setStep(3)
     } catch (err) {
@@ -364,9 +376,11 @@ export default function Home() {
       {step === 2 && (
         <div style={styles.card}>
           <ProgressBar
-            label={progressLabel}
-            expectedSec={progressPhase === 'stt' ? 15 : expectedSec}
             phase={progressPhase}
+            blogProgress={blogProgress}
+            imageProgress={imageProgress}
+            imageTotal={imageTotal}
+            liveText={liveText}
           />
         </div>
       )}

@@ -55,4 +55,7 @@ app.use((err, req, res, next) => {
 
 app.listen(PORT, () => {
   console.log(`Voice Blog 서버 실행 중: http://localhost:${PORT}`);
+}).on('connection', (socket) => {
+  // SSE 스트리밍을 위해 5분 타임아웃
+  socket.setTimeout(300000);
 });

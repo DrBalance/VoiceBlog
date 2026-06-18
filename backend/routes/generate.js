@@ -1,31 +1,57 @@
 const express = require('express');
 const { authMiddleware, supabase } = require('../middleware/auth');
-const { generateBlogPost, generateHashtags, analyzeStyle } = require('../services/claude');
+const { generateBlogPostStream, generateHashtags, analyzeStyle } = require('../services/claude');
+const { generateImages } = require('../services/dalle');
+const { searchImages } = require('../services/unsplash');
+const fetch = require('node-fetch');
 
 const router = express.Router();
 
-// POST /api/generate/blog
+// base64 data URL → Buffer 변환
+function base64ToBuffer(dataUrl) {
+  const base64 = dataUrl.replace(/^data:image\/\w+;base64,/, '');
+  return Buffer.from(base64, 'base64');
+}
+
+// SSE 헬퍼
+function sseWrite(res, event, data) {
+  res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+}
+
+// POST /api/generate/blog — SSE 스트리밍
 router.post('/blog', authMiddleware, async (req, res, next) => {
-  const { transcript, tone = 'informative', imageCount = 3, imageSource = 'dalle', customStyleId, contentLength = 'normal', useWebSearch = false, prevMarkdown } = req.body;
+  const {
+    transcript, tone = 'informative', imageCount = 3,
+    imageSource = 'dalle', customStyleId, contentLength = 'normal',
+    useWebSearch = false, prevMarkdown,
+  } = req.body;
 
   if (!transcript || transcript.trim().length < 10) {
     return res.status(400).json({ error: '글감 텍스트가 너무 짧습니다.' });
   }
 
+  // SSE 헤더 설정
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no'); // nginx 버퍼링 비활성화
+  res.flushHeaders();
+
+  // 연결 종료 감지
+  let clientGone = false;
+  req.on('close', () => { clientGone = true; });
+
   try {
     // 플랜 체크
-    const { data: plan, error: planError } = await supabase
+    const { data: plan } = await supabase
       .from('user_plans')
       .select('*')
       .eq('user_id', req.user.id)
       .single();
 
     if (plan && plan.generations_used >= plan.generations_limit) {
-      return res.status(403).json({
-        error: '이번 달 생성 한도를 초과했습니다.',
-        plan: plan.plan,
-        limit: plan.generations_limit,
-      });
+      sseWrite(res, 'error', { error: '이번 달 생성 한도를 초과했습니다.' });
+      return res.end();
     }
 
     // 커스텀 스타일 조회
@@ -40,14 +66,28 @@ router.post('/blog', authMiddleware, async (req, res, next) => {
       if (styleData) customSystemPrompt = styleData.system_prompt;
     }
 
-    // 블로그 생성 + 해시태그 병렬 생성
-    const [markdown, hashtags] = await Promise.all([
-      generateBlogPost(transcript, { tone, imageCount, imageSource, contentLength, useWebSearch, customSystemPrompt, prevMarkdown }),
-      generateHashtags(transcript),
-    ]);
+    // ── Phase 1: 블로그 글 스트리밍 생성 ──────────────────
+    sseWrite(res, 'progress', { phase: 'blog', status: 'generating' });
+
+    let markdown = '';
+    const sendChunk = (chunk) => {
+      if (clientGone) return;
+      sseWrite(res, 'blog_chunk', { text: chunk });
+    };
+
+    // 해시태그는 글 완성 후 생성 — 병렬 불가(마크다운 필요)
+    markdown = await generateBlogPostStream(
+      transcript,
+      { tone, imageCount, imageSource, contentLength, useWebSearch, customSystemPrompt, prevMarkdown },
+      sendChunk,
+    );
+
+    if (clientGone) return res.end();
+
+    sseWrite(res, 'progress', { phase: 'blog', status: 'done' });
 
     // 생성 이력 저장
-    const { data: generation, error } = await supabase
+    const { data: generation, error: genError } = await supabase
       .from('generations')
       .insert({
         user_id: req.user.id,
@@ -60,23 +100,104 @@ router.post('/blog', authMiddleware, async (req, res, next) => {
       .select()
       .single();
 
-    if (error) throw error;
+    if (genError) throw genError;
 
     // 사용량 업데이트
     await supabase
       .from('user_plans')
-      .upsert({
-        user_id: req.user.id,
-        generations_used: (plan?.generations_used || 0) + 1,
-      });
+      .upsert({ user_id: req.user.id, generations_used: (plan?.generations_used || 0) + 1 });
 
-    res.json({
+    // 해시태그 생성 (non-streaming, 빠름)
+    const hashtags = await generateHashtags(markdown);
+
+    // ── Phase 2: 이미지 생성 (1장씩 순차, SSE 진행 이벤트) ──
+    let uploadedImages = [];
+
+    if (imageCount > 0) {
+      sseWrite(res, 'progress', { phase: 'image', status: 'generating', current: 0, total: imageCount });
+
+      // 이미지 1장씩 생성 & 업로드 후 SSE 전송
+      let rawImages = [];
+      if (imageSource === 'dalle') {
+        rawImages = await generateImages(markdown, imageCount);
+      } else {
+        rawImages = await searchImages(markdown, imageCount);
+      }
+
+      for (const img of rawImages) {
+        if (clientGone) break;
+        if (!img.url) {
+          uploadedImages.push(img);
+          continue;
+        }
+
+        try {
+          let buffer;
+          const storagePath = `generations/${req.user.id}/${generation.id}/${img.index}.jpg`;
+
+          if (img.url.startsWith('data:')) {
+            buffer = base64ToBuffer(img.url);
+          } else {
+            const response = await fetch(img.url);
+            buffer = await response.buffer();
+          }
+
+          const { error: uploadError } = await supabase.storage
+            .from('blog-images')
+            .upload(storagePath, buffer, { contentType: 'image/jpeg', upsert: true });
+
+          if (uploadError) throw uploadError;
+
+          const { data: publicUrlData } = supabase.storage
+            .from('blog-images')
+            .getPublicUrl(storagePath);
+
+          const permanentUrl = publicUrlData.publicUrl;
+          const uploaded = { ...img, storagePath, permanentUrl, url: permanentUrl };
+          uploadedImages.push(uploaded);
+
+          // 1장 완료 → SSE 이벤트
+          sseWrite(res, 'progress', {
+            phase: 'image',
+            status: 'progress',
+            current: uploadedImages.length,
+            total: imageCount,
+            url: permanentUrl,
+            index: img.index,
+          });
+        } catch (err) {
+          console.error(`이미지 ${img.index} 업로드 오류:`, err.message);
+          uploadedImages.push(img);
+          sseWrite(res, 'progress', {
+            phase: 'image', status: 'progress',
+            current: uploadedImages.length, total: imageCount,
+          });
+        }
+      }
+
+      // storage_path DB 업데이트
+      await supabase
+        .from('generations')
+        .update({ storage_path: `generations/${req.user.id}/${generation.id}` })
+        .eq('id', generation.id)
+        .eq('user_id', req.user.id);
+    }
+
+    // ── 완료 이벤트 ───────────────────────────────────────
+    sseWrite(res, 'done', {
       generationId: generation.id,
       markdown,
       hashtags,
+      images: uploadedImages,
     });
+
+    res.end();
   } catch (err) {
-    next(err);
+    console.error('[SSE /blog error]', err);
+    if (!clientGone) {
+      sseWrite(res, 'error', { error: err.message || '서버 오류가 발생했습니다.' });
+    }
+    res.end();
   }
 });
 

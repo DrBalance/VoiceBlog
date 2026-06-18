@@ -23,8 +23,15 @@ export async function transcribeAudio(file) {
   return res.json()
 }
 
-// 텍스트 → 블로그 생성
-export async function generateBlog(transcript, options) {
+/**
+ * 블로그 생성 — SSE 스트리밍
+ *
+ * onProgress({ phase, status, current, total, url, index })  — 진행 이벤트
+ * onBlogChunk(text)  — 블로그 텍스트 청크 (실시간 타이핑)
+ *
+ * 반환: { generationId, markdown, hashtags, images }
+ */
+export async function generateBlog(transcript, options, { onProgress, onBlogChunk } = {}) {
   const headers = await getAuthHeader()
 
   const res = await fetch(`${API_URL}/api/generate/blog`, {
@@ -32,8 +39,56 @@ export async function generateBlog(transcript, options) {
     headers: { ...headers, 'Content-Type': 'application/json' },
     body: JSON.stringify({ transcript, ...options }),
   })
-  if (!res.ok) throw new Error((await res.json()).error)
-  return res.json()
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error(body.error || `서버 오류 (${res.status})`)
+  }
+
+  // SSE 스트림 파싱
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let result = null
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+
+    buffer += decoder.decode(value, { stream: true })
+
+    // SSE는 '\n\n'으로 이벤트 구분
+    const parts = buffer.split('\n\n')
+    buffer = parts.pop() // 마지막 불완전 조각 보류
+
+    for (const part of parts) {
+      const lines = part.split('\n')
+      let eventName = 'message'
+      let dataStr = ''
+
+      for (const line of lines) {
+        if (line.startsWith('event: ')) eventName = line.slice(7).trim()
+        else if (line.startsWith('data: ')) dataStr += line.slice(6)
+      }
+
+      if (!dataStr) continue
+      let data
+      try { data = JSON.parse(dataStr) } catch { continue }
+
+      if (eventName === 'progress' && onProgress) {
+        onProgress(data)
+      } else if (eventName === 'blog_chunk' && onBlogChunk) {
+        onBlogChunk(data.text)
+      } else if (eventName === 'done') {
+        result = data
+      } else if (eventName === 'error') {
+        throw new Error(data.error || '서버 오류')
+      }
+    }
+  }
+
+  if (!result) throw new Error('응답이 완료되지 않았습니다.')
+  return result
 }
 
 // 이미지 생성
