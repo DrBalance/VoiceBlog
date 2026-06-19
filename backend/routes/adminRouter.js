@@ -15,10 +15,11 @@ function adminOnly(req, res, next) {
 // GET /api/admin/users
 router.get('/users', authMiddleware, adminOnly, async (req, res, next) => {
   try {
-    const { data: authUsers, error: authError } = await supabase.auth.admin.listUsers();
+    const { data: listData, error: authError } = await supabase.auth.admin.listUsers();
     if (authError) throw authError;
+    const allUsers = listData?.users || [];
 
-    const userIds = authUsers.users.map(u => u.id);
+    const userIds = allUsers.map(u => u.id);
 
     const { data: credits } = await supabase
       .from('user_credits')
@@ -33,7 +34,7 @@ router.get('/users', authMiddleware, adminOnly, async (req, res, next) => {
     const creditMap = Object.fromEntries((credits || []).map(c => [c.user_id, c]));
     const planMap   = Object.fromEntries((plans   || []).map(p => [p.user_id, p]));
 
-    const users = authUsers.users.map(u => ({
+    const users = allUsers.map(u => ({
       user_id:            u.id,
       email:              u.email,
       created_at:         u.created_at,
