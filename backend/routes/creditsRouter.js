@@ -59,7 +59,6 @@ router.get('/plan', authMiddleware, async (req, res, next) => {
   }
 });
 
-module.exports = router;
 
 // POST /api/credits/deduct — 글 생성 완료 후 차감
 router.post('/deduct', authMiddleware, async (req, res, next) => {
@@ -81,3 +80,5 @@ router.post('/deduct', authMiddleware, async (req, res, next) => {
     next(err);
   }
 });
+
+module.exports = router;
