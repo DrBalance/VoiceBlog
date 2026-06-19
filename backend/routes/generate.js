@@ -3,7 +3,7 @@ const { authMiddleware, supabase } = require('../middleware/auth');
 const { generateBlogPostStream, generateHashtags, analyzeStyle } = require('../services/claude');
 const { generateImages } = require('../services/dalle');
 const { searchImages } = require('../services/unsplash');
-const { deductCredits, getBalance } = require('../middleware/credits');
+const { deductCredits, getBalance } = require('../credits');
 const fetch = require('node-fetch');
 
 const router = express.Router();
