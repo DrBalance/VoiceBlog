@@ -2,14 +2,14 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 
-const transcribeRouter = require('./routes/transcribe');
-const generateRouter = require('./routes/generate');
-const imagesRouter = require('./routes/images');
+const transcribeRouter  = require('./routes/transcribe');
+const generateRouter    = require('./routes/generate');
+const imagesRouter      = require('./routes/images');
 const generationsRouter = require('./routes/generations');
-const profilesRouter = require('./routes/profiles');
-const imageGenRouter = require('./routes/imageGen');
-const creditsRouter = require('./routes/creditsRoute');
-const adminRouter  = require('./routes/adminRouter');
+const profilesRouter    = require('./routes/profiles');
+const imageGenRouter    = require('./routes/imageGen');
+const creditsRouter     = require('./routes/creditsRouter');
+const adminRouter       = require('./routes/adminRouter');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -21,35 +21,28 @@ app.use(cors({
       'http://localhost:5173',
       'http://localhost:3000',
     ].filter(Boolean);
-    
-    if (!origin || allowed.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
+    if (!origin || allowed.includes(origin)) callback(null, true);
+    else callback(new Error('Not allowed by CORS'));
   },
   credentials: true,
 }));
 
-app.use(express.json()); 
-app.use(express.urlencoded({ extended: true })); 
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-// 헬스체크
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// 라우터
-app.use('/api/transcribe', transcribeRouter);
-app.use('/api/generate', generateRouter);
-app.use('/api/generate', imagesRouter);
+app.use('/api/transcribe',  transcribeRouter);
+app.use('/api/generate',    generateRouter);
+app.use('/api/generate',    imagesRouter);
 app.use('/api/generations', generationsRouter);
-app.use('/api/profiles', profilesRouter);
-app.use('/api/imagegen', imageGenRouter);
-app.use('/api/credits', creditsRouter);
-app.use('/api/admin',   adminRouter);
+app.use('/api/profiles',    profilesRouter);
+app.use('/api/imagegen',    imageGenRouter);
+app.use('/api/credits',     creditsRouter);
+app.use('/api/admin',       adminRouter);
 
-// 에러 핸들러
 app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(err.status || 500).json({

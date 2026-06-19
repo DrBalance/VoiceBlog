@@ -1,6 +1,7 @@
 // routes/adminRouter.js
 const express = require('express');
 const { authMiddleware, supabase } = require('../middleware/auth');
+const { chargeCredits } = require('../middleware/credits');
 
 const router = express.Router();
 const OWNER_EMAIL = 'drbalance@naver.com';
@@ -15,34 +16,43 @@ function adminOnly(req, res, next) {
 // GET /api/admin/users
 router.get('/users', authMiddleware, adminOnly, async (req, res, next) => {
   try {
-    const { data: listData, error: authError } = await supabase.auth.admin.listUsers();
-    if (authError) throw authError;
-    const allUsers = listData?.users || [];
+    // credit_transactions 집계
+    const { data: txData, error: txError } = await supabase
+      .from('credit_transactions')
+      .select('user_id, delta');
+    if (txError) throw txError;
 
-    const userIds = allUsers.map(u => u.id);
-
-    const { data: credits } = await supabase
-      .from('user_credits')
-      .select('user_id, credits, total_used')
-      .in('user_id', userIds);
-
-    const { data: plans } = await supabase
+    // user_plans
+    const { data: plans, error: planError } = await supabase
       .from('user_plans')
-      .select('user_id, plan, generations_used, generations_limit')
-      .in('user_id', userIds);
+      .select('user_id, plan, generations_used, generations_limit');
+    if (planError) throw planError;
 
-    const creditMap = Object.fromEntries((credits || []).map(c => [c.user_id, c]));
-    const planMap   = Object.fromEntries((plans   || []).map(p => [p.user_id, p]));
+    // auth.users — RPC로 조회
+    const { data: usersData, error: usersError } = await supabase
+      .rpc('get_all_users_admin');
+    if (usersError) throw usersError;
 
-    const users = allUsers.map(u => ({
-      user_id:            u.id,
-      email:              u.email,
-      created_at:         u.created_at,
-      credits:            creditMap[u.id]?.credits ?? 0,
-      total_credits_used: creditMap[u.id]?.total_used ?? 0,
-      plan:               planMap[u.id]?.plan ?? 'free',
-      generations_used:   planMap[u.id]?.generations_used ?? 0,
-      generations_limit:  planMap[u.id]?.generations_limit ?? 30,
+    // 트랜잭션 집계 맵
+    const txMap = {};
+    for (const row of txData || []) {
+      if (!txMap[row.user_id]) txMap[row.user_id] = { charged: 0, used: 0 };
+      if (row.delta > 0) txMap[row.user_id].charged += row.delta;
+      else txMap[row.user_id].used += Math.abs(row.delta);
+    }
+
+    const planMap = Object.fromEntries((plans || []).map(p => [p.user_id, p]));
+
+    const users = (usersData || []).map(u => ({
+      user_id:           u.user_id,
+      email:             u.email,
+      created_at:        u.created_at,
+      credits:           (txMap[u.user_id]?.charged || 0) - (txMap[u.user_id]?.used || 0),
+      total_charged:     txMap[u.user_id]?.charged || 0,
+      total_credits_used: txMap[u.user_id]?.used || 0,
+      plan:              planMap[u.user_id]?.plan ?? 'free',
+      generations_used:  planMap[u.user_id]?.generations_used ?? 0,
+      generations_limit: planMap[u.user_id]?.generations_limit ?? 30,
     }));
 
     res.json({ users });
@@ -51,57 +61,31 @@ router.get('/users', authMiddleware, adminOnly, async (req, res, next) => {
   }
 });
 
-// POST /api/admin/grant-credits  — userId로 직접 지급
+// POST /api/admin/grant-credits
 router.post('/grant-credits', authMiddleware, adminOnly, async (req, res, next) => {
   const { userId, amount } = req.body;
-
   if (!userId || !amount || amount < 1) {
     return res.status(400).json({ error: 'userId와 크레딧 수량이 필요합니다.' });
   }
 
   try {
-    const { data: existing } = await supabase
-      .from('user_credits')
-      .select('credits, total_used')
-      .eq('user_id', userId)
-      .single();
-
-    const currentCredits = existing?.credits ?? 0;
-    const newCredits = currentCredits + Number(amount);
-
-    const { error: upsertError } = await supabase
-      .from('user_credits')
-      .upsert({
-        user_id:    userId,
-        credits:    newCredits,
-        total_used: existing?.total_used ?? 0,
-        updated_at: new Date().toISOString(),
-      });
-
-    if (upsertError) throw upsertError;
-
-    await supabase
-      .from('credit_transactions')
-      .insert({
-        user_id: userId,
-        delta:   Number(amount),
-        reason:  `admin_grant:${req.user.email}`,
-        balance: newCredits,
-      });
-
-    res.json({ newCredits });
+    const { balance: newBalance } = await chargeCredits(
+      userId,
+      Number(amount),
+      `admin_grant:${req.user.email}`
+    );
+    res.json({ newCredits: newBalance });
   } catch (err) {
     next(err);
   }
 });
 
-// PATCH /api/admin/users/:userId — 플랜/크레딧 수정
+// PATCH /api/admin/users/:userId — 플랜 수정
 router.patch('/users/:userId', authMiddleware, adminOnly, async (req, res, next) => {
   const { userId } = req.params;
   const { plan, credits } = req.body;
 
   try {
-    // 플랜 수정 — UPDATE만 (기존 행 보존)
     if (plan !== undefined) {
       const { error } = await supabase
         .from('user_plans')
@@ -110,26 +94,15 @@ router.patch('/users/:userId', authMiddleware, adminOnly, async (req, res, next)
       if (error) throw error;
     }
 
-    // 크레딧 수정 — user_credits 테이블
+    // 크레딧 직접 수정 — 현재 잔량과의 차이를 트랜잭션으로 기록
     if (credits !== undefined) {
-      const { data: existing } = await supabase
-        .from('user_credits')
-        .select('credits, total_used')
-        .eq('user_id', userId)
-        .single();
+      const { data: txData } = await supabase
+        .from('credit_transactions')
+        .select('delta')
+        .eq('user_id', userId);
 
-      const delta = Number(credits) - (existing?.credits ?? 0);
-
-      const { error: creditError } = await supabase
-        .from('user_credits')
-        .upsert({
-          user_id:    userId,
-          credits:    Number(credits),
-          total_used: existing?.total_used ?? 0,
-          updated_at: new Date().toISOString(),
-        });
-
-      if (creditError) throw creditError;
+      const currentBalance = (txData || []).reduce((s, r) => s + r.delta, 0);
+      const delta = Number(credits) - currentBalance;
 
       if (delta !== 0) {
         await supabase

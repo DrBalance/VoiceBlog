@@ -1,14 +1,11 @@
-// routes/credits.js
-// GET  /api/credits        → 잔액 조회
-// GET  /api/credits/log    → 최근 트랜잭션 내역
-
+// routes/creditsRouter.js
 const express = require('express');
 const { authMiddleware, supabase } = require('../middleware/auth');
 const { getBalance } = require('../middleware/credits');
 
 const router = express.Router();
 
-// GET /api/credits
+// GET /api/credits — 잔량 조회
 router.get('/', authMiddleware, async (req, res, next) => {
   try {
     const balance = await getBalance(req.user.id);
@@ -18,7 +15,7 @@ router.get('/', authMiddleware, async (req, res, next) => {
   }
 });
 
-// GET /api/credits/log?limit=20
+// GET /api/credits/log — 트랜잭션 내역
 router.get('/log', authMiddleware, async (req, res, next) => {
   const limit = Math.min(parseInt(req.query.limit) || 20, 100);
   try {
@@ -36,30 +33,25 @@ router.get('/log', authMiddleware, async (req, res, next) => {
   }
 });
 
-// GET /api/credits/plan — 플랜 + 크레딧 통합 조회 (Settings 페이지용)
+// GET /api/credits/plan — Settings 페이지용
 router.get('/plan', authMiddleware, async (req, res, next) => {
   try {
-    const [creditBalance, planData] = await Promise.all([
+    const [balance, planData, usageData] = await Promise.all([
       getBalance(req.user.id),
-      supabase
-        .from('user_plans')
-        .select('plan, generations_used, generations_limit')
-        .eq('user_id', req.user.id)
-        .single(),
+      supabase.from('user_plans').select('plan, generations_used, generations_limit').eq('user_id', req.user.id).single(),
+      supabase.from('credit_transactions').select('delta').eq('user_id', req.user.id),
     ]);
 
-    // 총 사용 크레딧
-    const { data: usageData } = await supabase
-      .from('user_credits')
-      .select('total_used')
-      .eq('user_id', req.user.id)
-      .single();
+    const transactions = usageData.data || [];
+    const totalCharged = transactions.filter(t => t.delta > 0).reduce((s, t) => s + t.delta, 0);
+    const totalUsed    = transactions.filter(t => t.delta < 0).reduce((s, t) => s + Math.abs(t.delta), 0);
 
     res.json({
-      plan: planData.data?.plan || 'free',
-      credits: creditBalance,
-      totalCreditsUsed: usageData?.total_used || 0,
-      generationsUsed: planData.data?.generations_used || 0,
+      plan:             planData.data?.plan || 'free',
+      credits:          balance,
+      totalCreditsUsed: totalUsed,
+      totalCharged,
+      generationsUsed:  planData.data?.generations_used || 0,
       generationsLimit: planData.data?.generations_limit || 30,
     });
   } catch (err) {
