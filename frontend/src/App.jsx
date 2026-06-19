@@ -6,6 +6,8 @@ import Login from './pages/Login'
 import History from './pages/History'
 import Settings from './pages/Settings'
 import ImageGen from './pages/ImageGen'
+import Manual from './pages/Manual'
+import Admin from './pages/Admin'
 
 const OWNER_EMAIL = 'drbalance@naver.com'
 
@@ -75,9 +77,17 @@ export default function App() {
           <Link to="/settings" style={{ ...styles.navLink(location.pathname === '/settings'), textDecoration: 'none' }}>
             설정
           </Link>
+          <Link to="/manual" style={{ ...styles.navLink(location.pathname === '/manual'), textDecoration: 'none' }}>
+            사용법
+          </Link>
           {isOwner && (
             <Link to="/imagegen" style={{ ...styles.navLink(location.pathname === '/imagegen'), textDecoration: 'none' }}>
               카드이미지
+            </Link>
+          )}
+          {isOwner && (
+            <Link to="/admin" style={{ ...styles.navLink(location.pathname === '/admin'), textDecoration: 'none' }}>
+              관리자
             </Link>
           )}
           <button style={styles.logoutBtn} onClick={() => supabase.auth.signOut()}>
@@ -91,6 +101,8 @@ export default function App() {
           <Route path="/history" element={<History />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/imagegen" element={<ImageGen />} />
+          <Route path="/manual" element={<Manual />} />
+          {isOwner && <Route path="/admin" element={<Admin />} />}
         </Routes>
       </main>
     </>

@@ -4,6 +4,7 @@ import {
   getProfiles, createProfile, updateProfile, deleteProfile,
   createHashtagGroup, updateHashtagGroup, deleteHashtagGroup,
   createSignature, updateSignature, deleteSignature,
+  getMyPlan,
 } from '../services/api'
 
 const s = {
@@ -466,14 +467,15 @@ function ProfileCard({ profile, onDeleted, onUpdated }) {
 export default function Settings() {
   const [styles, setStyles] = useState([])
   const [profiles, setProfiles] = useState([])
+  const [plan, setPlan] = useState(null)
   const [loading, setLoading] = useState(true)
   const [styleModal, setStyleModal] = useState(false)
   const [profileModal, setProfileModal] = useState(false)
 
   useEffect(() => {
-    Promise.all([getStyles(), getProfiles()])
-      .then(([{ styles: st }, { profiles: pr }]) => {
-        setStyles(st); setProfiles(pr)
+    Promise.all([getStyles(), getProfiles(), getMyPlan()])
+      .then(([{ styles: st }, { profiles: pr }, planData]) => {
+        setStyles(st); setProfiles(pr); setPlan(planData)
       })
       .finally(() => setLoading(false))
   }, [])
@@ -497,6 +499,82 @@ export default function Settings() {
       <h2 style={{ fontSize: '1.4rem', fontWeight: 600, marginBottom: '32px', color: 'var(--text-primary)' }}>
         설정
       </h2>
+
+      {/* 크레딧 / 플랜 섹션 */}
+      {plan && (
+        <div style={s.section}>
+          <div style={s.sectionHead}>
+            <span style={s.sectionTitle}>💳 크레딧</span>
+            <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+              {plan.plan === 'free' ? '무료 플랜' : plan.plan === 'pro' ? 'Pro 플랜' : plan.plan}
+            </span>
+          </div>
+          <div style={s.sectionBody}>
+            {/* 크레딧 현황 */}
+            <div style={{
+              display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px',
+            }}>
+              {[
+                { label: '잔여 크레딧', value: plan.credits, unit: '크레딧', accent: true },
+                { label: '총 사용량', value: plan.totalCreditsUsed, unit: '크레딧' },
+                { label: '이번 달 생성', value: `${plan.generationsUsed} / ${plan.generationsLimit}`, unit: '회' },
+              ].map(({ label, value, unit, accent }) => (
+                <div key={label} style={{
+                  padding: '16px', borderRadius: '10px', textAlign: 'center',
+                  border: `1px solid ${accent ? 'var(--accent)' : 'var(--border)'}`,
+                  background: accent ? 'var(--accent-dim)' : 'var(--bg-hover)',
+                }}>
+                  <div style={{
+                    fontSize: '1.6rem', fontWeight: 700,
+                    color: accent ? 'var(--accent)' : 'var(--text-primary)',
+                  }}>{value}</div>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '4px' }}>{label}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* 크레딧 정책 안내 */}
+            <div style={{
+              padding: '14px 16px', borderRadius: '8px',
+              background: 'var(--bg-hover)', border: '1px solid var(--border)',
+              fontSize: '0.83rem', color: 'var(--text-secondary)', lineHeight: 1.7,
+            }}>
+              <div style={{ fontWeight: 600, marginBottom: '6px', color: 'var(--text-primary)' }}>크레딧 차감 기준</div>
+              {[
+                ['글 생성 (STT + Claude)', '1 크레딧'],
+                ['이미지 생성', '1장당 1 크레딧'],
+                ['웹 검색 보충', '1 크레딧'],
+                ['이미지 라이브러리 다운로드', '무료'],
+              ].map(([label, cost]) => (
+                <div key={label} style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0' }}>
+                  <span>{label}</span>
+                  <span style={{ color: 'var(--accent)', fontWeight: 500 }}>{cost}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* 충전 문의 */}
+            <div style={{
+              padding: '14px 16px', borderRadius: '8px', textAlign: 'center',
+              border: '1px solid var(--border)', background: 'var(--bg-hover)',
+            }}>
+              <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '10px' }}>
+                크레딧이 부족하신가요? 아래로 충전 문의해주세요.
+              </div>
+              <a
+                href="mailto:drbalance@naver.com?subject=VoiceBlog 크레딧 충전 문의"
+                style={{
+                  display: 'inline-block', padding: '8px 20px', borderRadius: '8px',
+                  background: 'var(--accent)', color: '#0e0e0e',
+                  fontSize: '0.88rem', fontWeight: 600, textDecoration: 'none',
+                }}
+              >
+                ✉ 크레딧 충전 문의
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 글쓰기 스타일 섹션 */}
       <div style={s.section}>

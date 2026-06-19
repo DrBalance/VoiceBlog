@@ -330,3 +330,44 @@ export async function getAllImages() {
   if (!res.ok) throw new Error((await res.json()).error)
   return res.json()
 }
+
+// ─── 플랜 / 크레딧 ────────────────────────────────────
+
+export async function getMyPlan() {
+  const headers = await getAuthHeader()
+  const res = await fetch(`${API_URL}/api/profiles/plan`, { headers })
+  if (!res.ok) throw new Error((await res.json()).error)
+  return res.json()
+}
+
+// ─── 관리자 ───────────────────────────────────────────
+
+export async function adminGetUsers() {
+  const headers = await getAuthHeader()
+  const res = await fetch(`${API_URL}/api/profiles/admin/users`, { headers })
+  if (!res.ok) throw new Error((await res.json()).error)
+  return res.json()
+}
+
+export async function adminGrantCredits(email, amount) {
+  const headers = await getAuthHeader()
+  const res = await fetch(`${API_URL}/api/profiles/admin/credits`, {
+    method: 'POST',
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, amount }),
+  })
+  if (!res.ok) throw new Error((await res.json()).error)
+  return res.json()
+}
+
+export async function adminUpdateUser(userId, updates) {
+  const headers = await getAuthHeader()
+  const res = await fetch(`${API_URL}/api/profiles/admin/users/${userId}`, {
+    method: 'PATCH',
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates),
+  })
+  if (!res.ok) throw new Error((await res.json()).error)
+  return res.json()
+}
+

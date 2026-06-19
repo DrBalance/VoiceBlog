@@ -3,6 +3,135 @@ const { authMiddleware, supabase } = require('../middleware/auth');
 
 const router = express.Router();
 
+// ─── 크레딧 조회 ──────────────────────────────────────
+
+// GET /api/profiles/plan — 내 플랜 + 크레딧 조회
+router.get('/plan', authMiddleware, async (req, res, next) => {
+  try {
+    const { data, error } = await supabase
+      .from('user_plans')
+      .select('plan, credits, total_credits_used, generations_used, generations_limit')
+      .eq('user_id', req.user.id)
+      .single();
+
+    if (error && error.code !== 'PGRST116') throw error;
+
+    res.json({
+      plan: data?.plan || 'free',
+      credits: data?.credits ?? 10,
+      totalCreditsUsed: data?.total_credits_used ?? 0,
+      generationsUsed: data?.generations_used ?? 0,
+      generationsLimit: data?.generations_limit ?? 30,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── 관리자 API ───────────────────────────────────────
+
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'drbalance@naver.com';
+
+function adminOnly(req, res, next) {
+  if (req.user.email !== ADMIN_EMAIL) {
+    return res.status(403).json({ error: '관리자 전용 기능입니다.' });
+  }
+  next();
+}
+
+// GET /api/profiles/admin/users — 전체 유저 목록
+router.get('/admin/users', authMiddleware, adminOnly, async (req, res, next) => {
+  try {
+    const { data: plans, error } = await supabase
+      .from('user_plans')
+      .select('user_id, plan, credits, total_credits_used, generations_used, generations_limit, created_at')
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    // 유저 이메일 조회 (service role 필요)
+    const { data: { users }, error: usersError } = await supabase.auth.admin.listUsers();
+    if (usersError) throw usersError;
+
+    const emailMap = {};
+    users.forEach(u => { emailMap[u.id] = u.email; });
+
+    const result = (plans || []).map(p => ({
+      ...p,
+      email: emailMap[p.user_id] || '(알 수 없음)',
+    }));
+
+    res.json({ users: result });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/profiles/admin/credits — 크레딧 부여
+router.post('/admin/credits', authMiddleware, adminOnly, async (req, res, next) => {
+  const { email, amount } = req.body;
+  if (!email || !amount || isNaN(amount)) {
+    return res.status(400).json({ error: 'email과 amount가 필요합니다.' });
+  }
+
+  try {
+    // 이메일로 user_id 찾기
+    const { data: { users }, error: usersError } = await supabase.auth.admin.listUsers();
+    if (usersError) throw usersError;
+
+    const target = users.find(u => u.email === email);
+    if (!target) return res.status(404).json({ error: '해당 이메일의 유저를 찾을 수 없습니다.' });
+
+    const { error } = await supabase
+      .from('user_plans')
+      .upsert({
+        user_id: target.id,
+        credits: supabase.rpc ? undefined : amount, // upsert fallback
+      });
+
+    // upsert 방식 대신 직접 업데이트
+    const { data: current } = await supabase
+      .from('user_plans')
+      .select('credits')
+      .eq('user_id', target.id)
+      .single();
+
+    const newCredits = (current?.credits ?? 0) + Number(amount);
+
+    const { error: updateError } = await supabase
+      .from('user_plans')
+      .upsert({ user_id: target.id, credits: newCredits });
+
+    if (updateError) throw updateError;
+
+    res.json({ success: true, email, newCredits });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PATCH /api/profiles/admin/users/:userId — 플랜 변경
+router.patch('/admin/users/:userId', authMiddleware, adminOnly, async (req, res, next) => {
+  const { plan, credits, generationsLimit } = req.body;
+  try {
+    const update = {};
+    if (plan !== undefined) update.plan = plan;
+    if (credits !== undefined) update.credits = credits;
+    if (generationsLimit !== undefined) update.generations_limit = generationsLimit;
+
+    const { data, error } = await supabase
+      .from('user_plans')
+      .upsert({ user_id: req.params.userId, ...update })
+      .select()
+      .single();
+
+    if (error) throw error;
+    res.json({ success: true, data });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // ─── 프로필 ───────────────────────────────────────────
 
 // GET /api/profiles — 목록 조회
