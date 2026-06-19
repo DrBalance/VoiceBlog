@@ -44,8 +44,7 @@ router.get('/admin/users', authMiddleware, adminOnly, async (req, res, next) => 
   try {
     const { data: plans, error } = await supabase
       .from('user_plans')
-      .select('user_id, plan, credits, total_credits_used, generations_used, generations_limit, created_at')
-      .order('created_at', { ascending: false });
+      .select('user_id, plan, credits, total_credits_used, generations_used, generations_limit');
 
     if (error) throw error;
 
