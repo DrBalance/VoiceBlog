@@ -8,7 +8,7 @@ const imagesRouter = require('./routes/images');
 const generationsRouter = require('./routes/generations');
 const profilesRouter = require('./routes/profiles');
 const imageGenRouter = require('./routes/imageGen');
-const creditsRouter = require('./routes/creditsRouter');
+const creditsRouter = require('./routes/creditsRoute');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
