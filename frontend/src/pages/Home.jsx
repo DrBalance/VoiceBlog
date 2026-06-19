@@ -50,6 +50,7 @@ const styles = {
     color: 'var(--text-secondary)', lineHeight: 1.7, marginTop: '12px',
     maxHeight: '120px', overflowY: 'auto',
   },
+  // 프로그레스
   progressWrap: {
     display: 'flex', flexDirection: 'column', alignItems: 'center',
     padding: '48px 32px', gap: '20px',
@@ -71,6 +72,8 @@ const styles = {
 // SSE 기반 실시간 프로그레스바
 function ProgressBar({ phase, blogProgress, imageProgress, imageTotal, liveText }) {
   const liveRef = useRef(null)
+
+  // 단계 전환 시 100% 유지 0.3초 → 다음 단계로
   const [displayPct, setDisplayPct] = useState(0)
   const [prevPhase, setPrevPhase] = useState(phase)
 
@@ -78,7 +81,9 @@ function ProgressBar({ phase, blogProgress, imageProgress, imageTotal, liveText 
     ? Math.min(blogProgress, 98)
     : phase === 'image'
       ? imageTotal > 0 ? Math.round((imageProgress / imageTotal) * 100) : 0
-      : 40
+      : 40  // stt
+
+  const [transitioning, setTransitioning] = useState(false)
 
   useEffect(() => {
     if (phase !== prevPhase) {
@@ -99,8 +104,11 @@ function ProgressBar({ phase, blogProgress, imageProgress, imageTotal, liveText 
     image: `🎨 이미지 생성 중... (${imageProgress} / ${imageTotal}장)`,
   }[phase] || '처리 중...'
 
+  // 새 텍스트가 올 때마다 스크롤 끝으로
   useEffect(() => {
-    if (liveRef.current) liveRef.current.scrollTop = liveRef.current.scrollHeight
+    if (liveRef.current) {
+      liveRef.current.scrollTop = liveRef.current.scrollHeight
+    }
   }, [liveText])
 
   return (
@@ -160,8 +168,8 @@ export default function Home() {
   const [reuseImages, setReuseImages] = useState(false)
 
   // SSE 실시간 상태
-  const [liveText, setLiveText] = useState('')
-  const [blogChars, setBlogChars] = useState(0)
+  const [liveText, setLiveText] = useState('')        // 타이핑 중인 텍스트
+  const [blogChars, setBlogChars] = useState(0)       // 수신된 글자 수
   const [imageProgress, setImageProgress] = useState(0)
   const [imageTotal, setImageTotal] = useState(0)
 
@@ -171,9 +179,7 @@ export default function Home() {
   const [selectedGroupIds, setSelectedGroupIds] = useState([])
   const [selectedSigId, setSelectedSigId] = useState('')
 
-  // 크레딧
   const { refreshCredits } = useCredits()
-
   const location = useLocation()
 
   useEffect(() => {
@@ -191,10 +197,12 @@ export default function Home() {
     }
   }, [location.state])
 
+  // 예상 글자 수 (contentLength 기준, 프로그레스 계산용)
   const expectedChars = {
     short: 800, normal: 1800, long: 3200, very_long: 5500,
   }[options.contentLength] || 1800
 
+  // blogProgress: 수신 글자 수 / 예상 글자 수 * 100
   const blogProgress = Math.min(Math.round((blogChars / expectedChars) * 100), 98)
 
   async function handleGenerate(prevMarkdown = '') {
@@ -224,6 +232,7 @@ export default function Home() {
         customStyleId: isCustomTone ? options.tone : undefined,
         tone: isCustomTone ? 'informative' : options.tone,
         prevMarkdown: prevMarkdown || undefined,
+        // reuseImages면 이미지 생성 안 함
         imageCount: reuseImages ? 0 : options.imageCount,
       }
 
@@ -233,7 +242,7 @@ export default function Home() {
         {
           onProgress: (data) => {
             if (data.phase === 'blog' && data.status === 'done') {
-              setBlogChars(c => c)
+              setBlogChars(c => c) // 100% 처리는 done 이벤트
             }
             if (data.phase === 'image') {
               setProgressPhase('image')
@@ -252,9 +261,7 @@ export default function Home() {
       setHashtags(tags || { naver: [], instagram: [] })
       if (!reuseImages) setImages(imgs || [])
 
-      // 크레딧 배지 갱신
       refreshCredits()
-
       setStep(3)
     } catch (err) {
       setError(err.message || '오류가 발생했습니다.')
@@ -262,10 +269,11 @@ export default function Home() {
     }
   }
 
+  // 탭 클릭 핸들러
   function handleStepClick(i) {
-    if (step === 2) return
-    if (i >= step && i !== 3) return
-    if (i === 3 && !markdown) return
+    if (step === 2) return // 생성 중엔 이동 불가
+    if (i >= step && i !== 3) return // 아직 안 간 단계는 클릭 불가 (결과 제외)
+    if (i === 3 && !markdown) return // 결과 없으면 결과 탭 불가
     setStep(i)
   }
 
@@ -282,6 +290,12 @@ export default function Home() {
     setSelectedSigId('')
   }
 
+  const progressLabel = {
+    stt: '🎙 음성을 텍스트로 변환하는 중...',
+    blog: '✍️ 블로그 글을 작성하는 중...',
+    image: '🎨 이미지를 생성하는 중...',
+  }[progressPhase] || '처리 중...'
+
   return (
     <div style={styles.page}>
       <header style={styles.header}>
@@ -291,6 +305,7 @@ export default function Home() {
         <p style={styles.subtitle}>음성을 녹음하거나 파일을 업로드하면 블로그 포스트를 자동으로 작성해드립니다</p>
       </header>
 
+      {/* 스텝 인디케이터 — 클릭 가능 */}
       <div style={styles.stepper}>
         {STEPS.map((s, i) => {
           const clickable = step !== 2 && (i < step || (i === 3 && markdown))
@@ -353,6 +368,8 @@ export default function Home() {
               <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>🎵 {audioFile.name}</div>
             </div>
           )}
+
+          {/* 이전 생성 글이 있으면 참고글 안내 */}
           {markdown && (
             <div style={{
               padding: '12px 16px', borderRadius: '8px', marginBottom: '16px',
@@ -362,6 +379,9 @@ export default function Home() {
               ✦ 이전에 생성된 글을 참고해서 새 버전을 작성합니다. 옵션을 변경하고 재생성하세요.
             </div>
           )}
+
+          {/* 이전 이미지 재사용 — OptionPanel 내부로 이동 */}
+
           <div style={styles.card}>
             <div style={styles.cardTitle}>생성 옵션</div>
             <OptionPanel
@@ -409,6 +429,7 @@ export default function Home() {
 
         return (
           <>
+            {/* 결과 화면 액션 버튼 */}
             <div style={{ display: 'flex', gap: '10px', marginBottom: '16px' }}>
               <button style={{ ...styles.generateBtn, flex: 1, marginTop: 0, background: 'var(--bg-hover)', color: 'var(--text-secondary)', fontSize: '0.88rem', padding: '12px' }}
                 onClick={() => setStep(1)}>
@@ -428,14 +449,18 @@ export default function Home() {
                 signature={selectedSig}
               />
 
+              {/* 프로필 선택 — 해시태그 섹션 아래 */}
               {profiles.length > 0 && (
                 <div style={{ marginTop: '24px', borderTop: '1px solid var(--border)', paddingTop: '20px' }}>
                   <div style={{ fontSize: '0.88rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '12px' }}>
                     📋 프로필에서 해시태그 / 서명 추가
                   </div>
+
+                  {/* 프로필 카드 목록 */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     {profiles.map(p => (
                       <div key={p.id}>
+                        {/* 프로필 클릭 토글 */}
                         <div
                           onClick={() => setSelectedProfileId(prev => prev === p.id ? '' : p.id)}
                           style={{
@@ -451,8 +476,11 @@ export default function Home() {
                             {selectedProfileId === p.id ? '▲' : '▼'}
                           </span>
                         </div>
+
+                        {/* 펼쳐지면 해시태그 그룹 + 서명 */}
                         {selectedProfileId === p.id && (
                           <div style={{ paddingLeft: '12px', marginTop: '6px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                            {/* 해시태그 그룹 */}
                             {p.hashtag_groups?.map(g => (
                               <label key={g.id} style={{
                                 display: 'flex', alignItems: 'center', gap: '10px',
@@ -473,6 +501,8 @@ export default function Home() {
                                 </div>
                               </label>
                             ))}
+
+                            {/* 블로그 서명 */}
                             {p.blog_signatures?.map(sig => (
                               <label key={sig.id} style={{
                                 display: 'flex', alignItems: 'center', gap: '10px',
@@ -487,6 +517,7 @@ export default function Home() {
                                 <span style={{ fontWeight: 500 }}>✍ {sig.name}</span>
                               </label>
                             ))}
+
                             {(!p.hashtag_groups?.length && !p.blog_signatures?.length) && (
                               <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', padding: '8px 12px' }}>
                                 해시태그 그룹 또는 서명을 설정 페이지에서 추가해주세요

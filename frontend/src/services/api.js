@@ -45,7 +45,6 @@ export async function generateBlog(transcript, options, { onProgress, onBlogChun
     body: JSON.stringify({ transcript, ...options }),
   })
 
-  // SSE 시작 전 에러 (402 크레딧 부족 등)
   if (!res.ok) await handleError(res)
 
   // SSE 스트림 파싱
@@ -59,32 +58,34 @@ export async function generateBlog(transcript, options, { onProgress, onBlogChun
     if (done) break
 
     buffer += decoder.decode(value, { stream: true })
-    const lines = buffer.split('\n')
-    buffer = lines.pop() // 마지막 불완전한 줄은 다음 청크로
 
-    let currentEvent = ''
-    for (const line of lines) {
-      if (line.startsWith('event: ')) {
-        currentEvent = line.slice(7).trim()
-      } else if (line.startsWith('data: ')) {
-        const raw = line.slice(6).trim()
-        if (!raw) continue
-        try {
-          const data = JSON.parse(raw)
-          if (currentEvent === 'progress' && onProgress) onProgress(data)
-          if (currentEvent === 'blog_chunk' && onBlogChunk) onBlogChunk(data.text)
-          if (currentEvent === 'done') result = data
-          if (currentEvent === 'error') throw new Error(data.error || '서버 오류')
-        } catch (e) {
-          if (e.message !== '서버 오류' && !e.message.includes('크레딧')) continue
-          throw e
-        }
+    // '\n\n'으로 이벤트 단위 분리
+    const parts = buffer.split('\n\n')
+    buffer = parts.pop()
+
+    for (const part of parts) {
+      const lines = part.split('\n')
+      let eventName = 'message'
+      let dataStr = ''
+
+      for (const line of lines) {
+        if (line.startsWith('event: ')) eventName = line.slice(7).trim()
+        else if (line.startsWith('data: ')) dataStr += line.slice(6)
       }
+
+      if (!dataStr) continue
+      let data
+      try { data = JSON.parse(dataStr) } catch { continue }
+
+      if (eventName === 'progress' && onProgress) onProgress(data)
+      else if (eventName === 'blog_chunk' && onBlogChunk) onBlogChunk(data.text)
+      else if (eventName === 'sse_done') result = data
+      else if (eventName === 'error') throw new Error(data.error || '서버 오류')
     }
   }
 
-  if (!result) throw new Error("서버 응답을 받지 못했습니다. 다시 시도해주세요.")
-  return result  // { generationId, markdown, hashtags, images, credits }
+  if (!result) throw new Error('응답이 완료되지 않았습니다.')
+  return result
 }
 
 // 생성 이력 조회
