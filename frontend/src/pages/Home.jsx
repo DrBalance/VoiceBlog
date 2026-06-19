@@ -70,15 +70,31 @@ const styles = {
 
 // SSE 기반 실시간 프로그레스바
 function ProgressBar({ phase, blogProgress, imageProgress, imageTotal, liveText }) {
-  // phase: 'stt' | 'blog' | 'image'
-  // blogProgress: 0~100 (스트리밍 글자 수 기반)
-  // imageProgress: { current, total }
+  const liveRef = useRef(null)
 
-  const pct = phase === 'blog'
-    ? Math.min(blogProgress, 98)        // 100%는 done 이벤트 후
+  // 단계 전환 시 100% 유지 0.3초 → 다음 단계로
+  const [displayPct, setDisplayPct] = useState(0)
+  const [prevPhase, setPrevPhase] = useState(phase)
+
+  const targetPct = phase === 'blog'
+    ? Math.min(blogProgress, 98)
     : phase === 'image'
       ? imageTotal > 0 ? Math.round((imageProgress / imageTotal) * 100) : 0
-      : 30 // stt: 가짜 고정값
+      : 40  // stt
+
+  useEffect(() => {
+    if (phase !== prevPhase) {
+      // 단계 바뀌면 먼저 100으로 올린 뒤 0.35초 후 새 단계 시작
+      setDisplayPct(100)
+      const t = setTimeout(() => {
+        setPrevPhase(phase)
+        setDisplayPct(0)
+      }, 350)
+      return () => clearTimeout(t)
+    } else {
+      setDisplayPct(targetPct)
+    }
+  }, [phase, targetPct])
 
   const label = {
     stt: '🎙 음성을 텍스트로 변환하는 중...',
@@ -86,36 +102,47 @@ function ProgressBar({ phase, blogProgress, imageProgress, imageTotal, liveText 
     image: `🎨 이미지 생성 중... (${imageProgress} / ${imageTotal}장)`,
   }[phase] || '처리 중...'
 
-  // 실시간 타이핑 미리보기 (처음 120자)
-  const preview = liveText ? liveText.slice(0, 120).replace(/\n/g, ' ') : ''
+  // 새 텍스트가 올 때마다 스크롤 끝으로
+  useEffect(() => {
+    if (liveRef.current) {
+      liveRef.current.scrollTop = liveRef.current.scrollHeight
+    }
+  }, [liveText])
 
   return (
     <div style={styles.progressWrap}>
       <div style={styles.progressLabel}>{label}</div>
       <div style={{ width: '100%' }}>
         <div style={styles.progressBarWrap}>
-          <div style={styles.progressBarFill(pct)} />
+          <div style={{
+            ...styles.progressBarFill(displayPct),
+            transition: 'width 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+          }} />
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px' }}>
           <span style={styles.progressSub}>
             {phase === 'image'
               ? `${imageProgress} / ${imageTotal}장 완료`
               : phase === 'blog'
-                ? `${pct}% 작성됨`
+                ? `${displayPct}% 작성됨`
                 : 'STT 변환 중...'}
           </span>
-          <span style={styles.progressSub}>{pct}%</span>
+          <span style={styles.progressSub}>{displayPct}%</span>
         </div>
       </div>
-      {phase === 'blog' && preview && (
-        <div style={{
-          width: '100%', fontSize: '0.8rem', color: 'var(--text-muted)',
-          lineHeight: 1.6, fontFamily: 'var(--font-mono, monospace)',
-          background: 'var(--bg-hover)', borderRadius: '6px', padding: '10px 12px',
-          maxHeight: '60px', overflow: 'hidden',
-          borderLeft: '3px solid var(--accent)',
-        }}>
-          {preview}
+      {phase === 'blog' && liveText && (
+        <div
+          ref={liveRef}
+          style={{
+            width: '100%', fontSize: '0.8rem', color: 'var(--text-muted)',
+            lineHeight: 1.7, fontFamily: 'var(--font-mono, monospace)',
+            background: 'var(--bg-hover)', borderRadius: '6px', padding: '10px 12px',
+            height: '90px', overflowY: 'auto',
+            borderLeft: '3px solid var(--accent)',
+            whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+          }}
+        >
+          {liveText}
           <span style={{ opacity: 0.5, animation: 'blink 1s step-end infinite' }}>▌</span>
         </div>
       )}

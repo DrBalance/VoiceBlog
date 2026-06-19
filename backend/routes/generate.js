@@ -107,8 +107,12 @@ router.post('/blog', authMiddleware, async (req, res, next) => {
       .from('user_plans')
       .upsert({ user_id: req.user.id, generations_used: (plan?.generations_used || 0) + 1 });
 
-    // 해시태그 생성 (non-streaming, 빠름)
-    const hashtags = await generateHashtags(markdown);
+    // 해시태그 생성 (non-streaming, 빠름) — 인스타 5개 제한
+    const rawHashtags = await generateHashtags(markdown)
+    const hashtags = {
+      naver: rawHashtags.naver || [],
+      instagram: (rawHashtags.instagram || []).slice(0, 5),
+    };
 
     // ── Phase 2: 이미지 생성 (1장씩 순차, SSE 진행 이벤트) ──
     let uploadedImages = [];
