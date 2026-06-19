@@ -39,8 +39,6 @@ const s = {
     background: variant === 'primary' ? 'var(--accent)' : variant === 'danger' ? 'rgba(224,92,92,0.15)' : 'var(--bg-hover)',
     color: variant === 'primary' ? '#0e0e0e' : variant === 'danger' ? '#e05c5c' : 'var(--text-secondary)',
   }),
-  row: { display: 'flex', gap: '10px', alignItems: 'center' },
-  label: { fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '6px', display: 'block' },
   statGrid: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '24px' },
   statCard: {
     padding: '16px', borderRadius: '10px', textAlign: 'center',
@@ -65,18 +63,16 @@ export default function Admin() {
   const [error, setError] = useState('')
   const [toast, setToast] = useState('')
 
-  // 크레딧 부여 폼
-  const [grantEmail, setGrantEmail] = useState('')
-  const [grantAmount, setGrantAmount] = useState('10')
-  const [granting, setGranting] = useState(false)
-
   // 유저별 인라인 편집
   const [editingId, setEditingId] = useState(null)
   const [editValues, setEditValues] = useState({})
 
-  useEffect(() => {
-    fetchUsers()
-  }, [])
+  // 크레딧 지급 팝업
+  const [grantingId, setGrantingId] = useState(null)
+  const [grantAmount, setGrantAmount] = useState('10')
+  const [grantLoading, setGrantLoading] = useState(false)
+
+  useEffect(() => { fetchUsers() }, [])
 
   async function fetchUsers() {
     setLoading(true)
@@ -95,19 +91,20 @@ export default function Admin() {
     setTimeout(() => setToast(''), 2500)
   }
 
-  async function handleGrant() {
-    if (!grantEmail || !grantAmount) return
-    setGranting(true)
+  // 크레딧 지급 — userId 직접 전달
+  async function handleGrant(userId, email) {
+    if (!grantAmount || Number(grantAmount) < 1) return
+    setGrantLoading(true)
     try {
-      const { newCredits } = await adminGrantCredits(grantEmail, Number(grantAmount))
-      showToast(`✓ ${grantEmail} 에게 ${grantAmount} 크레딧 지급 완료 (잔여: ${newCredits})`)
-      setGrantEmail('')
+      const { newCredits } = await adminGrantCredits(userId, Number(grantAmount))
+      showToast(`✓ ${email} 에게 ${grantAmount} 크레딧 지급 완료 (잔여: ${newCredits})`)
+      setGrantingId(null)
       setGrantAmount('10')
       fetchUsers()
     } catch (e) {
       setError(e.message)
     } finally {
-      setGranting(false)
+      setGrantLoading(false)
     }
   }
 
@@ -116,13 +113,13 @@ export default function Admin() {
       await adminUpdateUser(userId, editValues)
       showToast('✓ 저장 완료')
       setEditingId(null)
+      setEditValues({})
       fetchUsers()
     } catch (e) {
       setError(e.message)
     }
   }
 
-  // 통계
   const totalUsers = users.length
   const totalCredits = users.reduce((s, u) => s + (u.credits || 0), 0)
   const totalGenerations = users.reduce((s, u) => s + (u.generations_used || 0), 0)
@@ -165,39 +162,6 @@ export default function Admin() {
         ))}
       </div>
 
-      {/* 크레딧 즉시 지급 */}
-      <div style={s.section}>
-        <div style={s.sectionHead}>
-          <span style={s.sectionTitle}>💳 크레딧 지급</span>
-        </div>
-        <div style={s.sectionBody}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: '10px', alignItems: 'flex-end' }}>
-            <div>
-              <label style={s.label}>이메일</label>
-              <input style={s.input} placeholder="user@example.com"
-                value={grantEmail} onChange={e => setGrantEmail(e.target.value)} />
-            </div>
-            <div>
-              <label style={s.label}>크레딧 수량</label>
-              <input style={{ ...s.input, width: '100px' }} type="number" min="1"
-                value={grantAmount} onChange={e => setGrantAmount(e.target.value)} />
-            </div>
-            <button style={s.btn('primary')} onClick={handleGrant} disabled={granting}>
-              {granting ? '지급 중...' : '지급'}
-            </button>
-          </div>
-          {/* 빠른 수량 버튼 */}
-          <div style={{ display: 'flex', gap: '6px', marginTop: '10px', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', alignSelf: 'center' }}>빠른 선택:</span>
-            {[10, 30, 50, 100, 150].map(n => (
-              <button key={n} style={s.btn('default')} onClick={() => setGrantAmount(String(n))}>
-                {n}개
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-
       {/* 유저 목록 */}
       <div style={s.section}>
         <div style={s.sectionHead}>
@@ -225,6 +189,8 @@ export default function Admin() {
                       {new Date(user.created_at).toLocaleDateString('ko-KR')}
                     </div>
                   </td>
+
+                  {/* 플랜 */}
                   <td style={s.td}>
                     {editingId === user.user_id ? (
                       <select
@@ -239,6 +205,8 @@ export default function Admin() {
                       <span style={s.badge(user.plan)}>{user.plan || 'free'}</span>
                     )}
                   </td>
+
+                  {/* 잔여 크레딧 */}
                   <td style={s.td}>
                     {editingId === user.user_id ? (
                       <input type="number" style={{ ...s.input, width: '80px' }}
@@ -250,21 +218,52 @@ export default function Admin() {
                       </span>
                     )}
                   </td>
+
                   <td style={s.td}>{user.total_credits_used ?? 0}</td>
-                  <td style={s.td}>
-                    {user.generations_used ?? 0} / {user.generations_limit ?? 30}
-                  </td>
+                  <td style={s.td}>{user.generations_used ?? 0} / {user.generations_limit ?? 30}</td>
+
+                  {/* 관리 버튼 */}
                   <td style={s.td}>
                     {editingId === user.user_id ? (
                       <div style={{ display: 'flex', gap: '6px' }}>
                         <button style={s.btn('primary')} onClick={() => handleUpdateUser(user.user_id)}>저장</button>
                         <button style={s.btn('default')} onClick={() => { setEditingId(null); setEditValues({}) }}>취소</button>
                       </div>
+                    ) : grantingId === user.user_id ? (
+                      <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                        <div style={{ display: 'flex', gap: '4px' }}>
+                          {[10, 30, 50].map(n => (
+                            <button key={n} style={{
+                              ...s.btn('default'),
+                              padding: '4px 8px', fontSize: '0.75rem',
+                              background: grantAmount === String(n) ? 'var(--accent-dim)' : undefined,
+                              color: grantAmount === String(n) ? 'var(--accent)' : undefined,
+                            }} onClick={() => setGrantAmount(String(n))}>
+                              {n}
+                            </button>
+                          ))}
+                          <input type="number" min="1"
+                            style={{ ...s.input, width: '55px', padding: '4px 6px' }}
+                            value={grantAmount}
+                            onChange={e => setGrantAmount(e.target.value)} />
+                        </div>
+                        <button style={s.btn('primary')} disabled={grantLoading}
+                          onClick={() => handleGrant(user.user_id, user.email)}>
+                          {grantLoading ? '...' : '지급'}
+                        </button>
+                        <button style={s.btn('default')} onClick={() => { setGrantingId(null); setGrantAmount('10') }}>✕</button>
+                      </div>
                     ) : (
-                      <button style={s.btn('default')} onClick={() => {
-                        setEditingId(user.user_id)
-                        setEditValues({ plan: user.plan, credits: user.credits })
-                      }}>편집</button>
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <button style={s.btn('default')} onClick={() => {
+                          setGrantingId(user.user_id)
+                          setGrantAmount('10')
+                        }}>💳 지급</button>
+                        <button style={s.btn('default')} onClick={() => {
+                          setEditingId(user.user_id)
+                          setEditValues({ plan: user.plan, credits: user.credits })
+                        }}>편집</button>
+                      </div>
                     )}
                   </td>
                 </tr>
@@ -274,7 +273,6 @@ export default function Admin() {
         </div>
       </div>
 
-      {/* 토스트 */}
       <div style={s.toast(!!toast)}>{toast}</div>
     </div>
   )

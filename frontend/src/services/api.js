@@ -321,12 +321,12 @@ export async function adminGetUsers() {
   return res.json()
 }
 
-export async function adminGrantCredits(email, amount) {
+export async function adminGrantCredits(userId, amount) {
   const headers = await getAuthHeader()
   const res = await fetch(`${API_URL}/api/admin/grant-credits`, {
     method: 'POST',
     headers: { ...headers, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, amount }),
+    body: JSON.stringify({ userId, amount }),
   })
   if (!res.ok) await handleError(res)
   return res.json()
