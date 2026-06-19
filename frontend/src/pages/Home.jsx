@@ -261,7 +261,7 @@ export default function Home() {
       setHashtags(tags || { naver: [], instagram: [] })
       if (!reuseImages) setImages(imgs || [])
 
-      const creditCost = 1 + (options.useWebSearch ? 1 : 0)
+      const creditCost = 1 + options.imageCount + (options.useWebSearch ? 1 : 0)
       await deductCredits(creditCost, options.useWebSearch ? 'blog_generate+web_search' : 'blog_generate')
       refreshCredits()
       setStep(3)

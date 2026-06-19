@@ -31,7 +31,7 @@ router.post('/blog', authMiddleware, async (req, res, next) => {
   }
 
   // ── 크레딧 잔액 확인 ──────────────────────────────────
-  const creditCost = 1 + (useWebSearch ? 1 : 0);
+  const creditCost = 1 + (imageCount || 0) + (useWebSearch ? 1 : 0);
   const { data: creditData } = await supabase
     .from('credit_transactions')
     .select('delta')
