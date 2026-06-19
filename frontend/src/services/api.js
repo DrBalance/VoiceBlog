@@ -345,3 +345,14 @@ export async function adminUpdateUser(userId, values) {
   if (!res.ok) await handleError(res)
   return res.json()
 }
+
+export async function deductCredits(amount, reason) {
+  const headers = await getAuthHeader()
+  const res = await fetch(`${API_URL}/api/credits/deduct`, {
+    method: 'POST',
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ amount, reason }),
+  })
+  if (!res.ok) await handleError(res)
+  return res.json()
+}

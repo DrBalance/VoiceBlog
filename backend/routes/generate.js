@@ -30,6 +30,22 @@ router.post('/blog', authMiddleware, async (req, res, next) => {
     return res.status(400).json({ error: '글감 텍스트가 너무 짧습니다.' });
   }
 
+  // ── 크레딧 잔액 확인 ──────────────────────────────────
+  const creditCost = 1 + (useWebSearch ? 1 : 0);
+  const { data: creditData } = await supabase
+    .from('credit_transactions')
+    .select('delta')
+    .eq('user_id', req.user.id);
+  const balance = (creditData || []).reduce((sum, r) => sum + r.delta, 0);
+  if (balance < creditCost) {
+    return res.status(402).json({
+      error: `크레딧이 부족합니다. (필요: ${creditCost}, 잔여: ${balance})`,
+      code: 'INSUFFICIENT_CREDITS',
+      balance,
+      required: creditCost,
+    });
+  }
+
   // SSE 헤더 설정
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');

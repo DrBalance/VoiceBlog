@@ -3,7 +3,7 @@ import { useLocation } from 'react-router-dom'
 import AudioInput from '../components/AudioInput'
 import OptionPanel from '../components/OptionPanel'
 import BlogPreview from '../components/BlogPreview'
-import { transcribeAudio, generateBlog, getProfiles } from '../services/api'
+import { transcribeAudio, generateBlog, getProfiles, deductCredits } from '../services/api'
 import { useCredits } from '../App'
 
 const STEPS = ['음성 입력', '옵션 설정', '생성 중', '결과 확인']
@@ -261,6 +261,8 @@ export default function Home() {
       setHashtags(tags || { naver: [], instagram: [] })
       if (!reuseImages) setImages(imgs || [])
 
+      const creditCost = 1 + (options.useWebSearch ? 1 : 0)
+      await deductCredits(creditCost, options.useWebSearch ? 'blog_generate+web_search' : 'blog_generate')
       refreshCredits()
       setStep(3)
     } catch (err) {

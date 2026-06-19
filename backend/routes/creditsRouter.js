@@ -60,3 +60,24 @@ router.get('/plan', authMiddleware, async (req, res, next) => {
 });
 
 module.exports = router;
+
+// POST /api/credits/deduct — 글 생성 완료 후 차감
+router.post('/deduct', authMiddleware, async (req, res, next) => {
+  const { amount, reason } = req.body;
+  if (!amount || amount < 1) {
+    return res.status(400).json({ error: 'amount가 필요합니다.' });
+  }
+  try {
+    const { ok, balance } = await require('../middleware/credits').deductCredits(
+      req.user.id,
+      Number(amount),
+      reason || 'blog_generate',
+    );
+    if (!ok) {
+      return res.status(402).json({ error: '크레딧이 부족합니다.', balance });
+    }
+    res.json({ credits: balance });
+  } catch (err) {
+    next(err);
+  }
+});
