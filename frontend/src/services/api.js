@@ -30,18 +30,13 @@ export async function transcribeAudio(file) {
   const headers = await getAuthHeader()
   const formData = new FormData()
   formData.append('audio', file)
-
-  const res = await fetch(`${API_URL}/api/transcribe`, {
-    method: 'POST',
-    headers,
-    body: formData,
-  })
+  const res = await fetch(`${API_URL}/api/transcribe`, { method: 'POST', headers, body: formData })
   if (!res.ok) await handleError(res)
   return res.json()
 }
 
-// 텍스트 → 블로그 생성  (응답에 credits 포함)
-export async function generateBlog(transcript, options) {
+// 텍스트 → 블로그 생성 (SSE 스트리밍)
+export async function generateBlog(transcript, options, { onProgress, onBlogChunk } = {}) {
   const headers = await getAuthHeader()
 
   const res = await fetch(`${API_URL}/api/generate/blog`, {
@@ -49,21 +44,46 @@ export async function generateBlog(transcript, options) {
     headers: { ...headers, 'Content-Type': 'application/json' },
     body: JSON.stringify({ transcript, ...options }),
   })
-  if (!res.ok) await handleError(res)
-  return res.json()  // { generationId, markdown, hashtags, credits }
-}
 
-// 이미지 생성  (응답에 credits 포함)
-export async function generateImages(generationId, markdown, options) {
-  const headers = await getAuthHeader()
-
-  const res = await fetch(`${API_URL}/api/generate/images`, {
-    method: 'POST',
-    headers: { ...headers, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ generationId, markdown, ...options }),
-  })
+  // SSE 시작 전 에러 (402 크레딧 부족 등)
   if (!res.ok) await handleError(res)
-  return res.json()  // { images, credits }
+
+  // SSE 스트림 파싱
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let result = null
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+
+    buffer += decoder.decode(value, { stream: true })
+    const lines = buffer.split('\n')
+    buffer = lines.pop() // 마지막 불완전한 줄은 다음 청크로
+
+    let currentEvent = ''
+    for (const line of lines) {
+      if (line.startsWith('event: ')) {
+        currentEvent = line.slice(7).trim()
+      } else if (line.startsWith('data: ')) {
+        const raw = line.slice(6).trim()
+        if (!raw) continue
+        try {
+          const data = JSON.parse(raw)
+          if (currentEvent === 'progress' && onProgress) onProgress(data)
+          if (currentEvent === 'blog_chunk' && onBlogChunk) onBlogChunk(data.text)
+          if (currentEvent === 'done') result = data
+          if (currentEvent === 'error') throw new Error(data.error || '서버 오류')
+        } catch (e) {
+          if (e.message !== '서버 오류' && !e.message.includes('크레딧')) continue
+          throw e
+        }
+      }
+    }
+  }
+
+  return result  // { generationId, markdown, hashtags, images, credits }
 }
 
 // 생성 이력 조회
@@ -104,9 +124,7 @@ export async function analyzeStyle(exampleText) {
 
 export async function deleteStyle(id) {
   const headers = await getAuthHeader()
-  const res = await fetch(`${API_URL}/api/generate/style/${id}`, {
-    method: 'DELETE', headers,
-  })
+  const res = await fetch(`${API_URL}/api/generate/style/${id}`, { method: 'DELETE', headers })
   if (!res.ok) await handleError(res)
   return res.json()
 }
@@ -144,9 +162,7 @@ export async function updateProfile(id, name) {
 
 export async function deleteProfile(id) {
   const headers = await getAuthHeader()
-  const res = await fetch(`${API_URL}/api/profiles/${id}`, {
-    method: 'DELETE', headers,
-  })
+  const res = await fetch(`${API_URL}/api/profiles/${id}`, { method: 'DELETE', headers })
   if (!res.ok) await handleError(res)
   return res.json()
 }
@@ -177,9 +193,7 @@ export async function updateHashtagGroup(groupId, { name, naverTags, instagramTa
 
 export async function deleteHashtagGroup(groupId) {
   const headers = await getAuthHeader()
-  const res = await fetch(`${API_URL}/api/profiles/hashtag-groups/${groupId}`, {
-    method: 'DELETE', headers,
-  })
+  const res = await fetch(`${API_URL}/api/profiles/hashtag-groups/${groupId}`, { method: 'DELETE', headers })
   if (!res.ok) await handleError(res)
   return res.json()
 }
@@ -210,9 +224,7 @@ export async function updateSignature(sigId, { name, htmlContent }) {
 
 export async function deleteSignature(sigId) {
   const headers = await getAuthHeader()
-  const res = await fetch(`${API_URL}/api/profiles/signatures/${sigId}`, {
-    method: 'DELETE', headers,
-  })
+  const res = await fetch(`${API_URL}/api/profiles/signatures/${sigId}`, { method: 'DELETE', headers })
   if (!res.ok) await handleError(res)
   return res.json()
 }
@@ -221,21 +233,15 @@ export async function deleteSignature(sigId) {
 
 export async function generateCardImage({ prompt, count, size, quality, scene, korText, refImageFile }) {
   const headers = await getAuthHeader()
-
   const formData = new FormData()
   formData.append('prompt', prompt)
   formData.append('count', count)
   formData.append('size', size)
   formData.append('quality', quality)
-  if (scene)   formData.append('scene', scene)
-  if (korText) formData.append('korText', korText)
+  if (scene)        formData.append('scene', scene)
+  if (korText)      formData.append('korText', korText)
   if (refImageFile) formData.append('refImage', refImageFile)
-
-  const res = await fetch(`${API_URL}/api/imagegen/generate`, {
-    method: 'POST',
-    headers,
-    body: formData,
-  })
+  const res = await fetch(`${API_URL}/api/imagegen/generate`, { method: 'POST', headers, body: formData })
   if (!res.ok) await handleError(res)
   return res.json()
 }
@@ -251,11 +257,7 @@ export async function uploadStyleImage(file) {
   const headers = await getAuthHeader()
   const formData = new FormData()
   formData.append('styleImage', file)
-  const res = await fetch(`${API_URL}/api/imagegen/style-image`, {
-    method: 'POST',
-    headers,
-    body: formData,
-  })
+  const res = await fetch(`${API_URL}/api/imagegen/style-image`, { method: 'POST', headers, body: formData })
   if (!res.ok) await handleError(res)
   return res.json()
 }
@@ -300,7 +302,6 @@ export async function getMyPlan() {
   const res = await fetch(`${API_URL}/api/credits/plan`, { headers })
   if (!res.ok) await handleError(res)
   return res.json()
-  // { plan, credits, totalCreditsUsed, generationsUsed, generationsLimit }
 }
 
 // ─── 크레딧 ───────────────────────────────────────────
@@ -309,7 +310,7 @@ export async function getCredits() {
   const headers = await getAuthHeader()
   const res = await fetch(`${API_URL}/api/credits`, { headers })
   if (!res.ok) await handleError(res)
-  return res.json()  // { credits: number }
+  return res.json()
 }
 
 // ─── 관리자 ───────────────────────────────────────────
