@@ -8,6 +8,23 @@ async function getAuthHeader() {
   return { Authorization: `Bearer ${session.access_token}` }
 }
 
+// ── 크레딧 부족 전용 에러 클래스 ──────────────────────────
+export class InsufficientCreditsError extends Error {
+  constructor(balance, required) {
+    super(`크레딧이 부족합니다. (필요: ${required}, 잔여: ${balance})`)
+    this.name = 'InsufficientCreditsError'
+    this.balance = balance
+    this.required = required
+  }
+}
+
+// ── 에러 파싱 헬퍼 ────────────────────────────────────────
+async function handleError(res) {
+  const body = await res.json().catch(() => ({ error: '알 수 없는 오류' }))
+  if (res.status === 402) throw new InsufficientCreditsError(body.balance, body.required)
+  throw new Error(body.error || `HTTP ${res.status}`)
+}
+
 // 음성 파일 → 텍스트
 export async function transcribeAudio(file) {
   const headers = await getAuthHeader()
@@ -19,19 +36,12 @@ export async function transcribeAudio(file) {
     headers,
     body: formData,
   })
-  if (!res.ok) throw new Error((await res.json()).error)
+  if (!res.ok) await handleError(res)
   return res.json()
 }
 
-/**
- * 블로그 생성 — SSE 스트리밍
- *
- * onProgress({ phase, status, current, total, url, index })  — 진행 이벤트
- * onBlogChunk(text)  — 블로그 텍스트 청크 (실시간 타이핑)
- *
- * 반환: { generationId, markdown, hashtags, images }
- */
-export async function generateBlog(transcript, options, { onProgress, onBlogChunk } = {}) {
+// 텍스트 → 블로그 생성  (응답에 credits 포함)
+export async function generateBlog(transcript, options) {
   const headers = await getAuthHeader()
 
   const res = await fetch(`${API_URL}/api/generate/blog`, {
@@ -39,59 +49,11 @@ export async function generateBlog(transcript, options, { onProgress, onBlogChun
     headers: { ...headers, 'Content-Type': 'application/json' },
     body: JSON.stringify({ transcript, ...options }),
   })
-
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}))
-    throw new Error(body.error || `서버 오류 (${res.status})`)
-  }
-
-  // SSE 스트림 파싱
-  const reader = res.body.getReader()
-  const decoder = new TextDecoder()
-  let buffer = ''
-  let result = null
-
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
-
-    buffer += decoder.decode(value, { stream: true })
-
-    // SSE는 '\n\n'으로 이벤트 구분
-    const parts = buffer.split('\n\n')
-    buffer = parts.pop() // 마지막 불완전 조각 보류
-
-    for (const part of parts) {
-      const lines = part.split('\n')
-      let eventName = 'message'
-      let dataStr = ''
-
-      for (const line of lines) {
-        if (line.startsWith('event: ')) eventName = line.slice(7).trim()
-        else if (line.startsWith('data: ')) dataStr += line.slice(6)
-      }
-
-      if (!dataStr) continue
-      let data
-      try { data = JSON.parse(dataStr) } catch { continue }
-
-      if (eventName === 'progress' && onProgress) {
-        onProgress(data)
-      } else if (eventName === 'blog_chunk' && onBlogChunk) {
-        onBlogChunk(data.text)
-      } else if (eventName === 'done') {
-        result = data
-      } else if (eventName === 'error') {
-        throw new Error(data.error || '서버 오류')
-      }
-    }
-  }
-
-  if (!result) throw new Error('응답이 완료되지 않았습니다.')
-  return result
+  if (!res.ok) await handleError(res)
+  return res.json()  // { generationId, markdown, hashtags, credits }
 }
 
-// 이미지 생성
+// 이미지 생성  (응답에 credits 포함)
 export async function generateImages(generationId, markdown, options) {
   const headers = await getAuthHeader()
 
@@ -100,15 +62,15 @@ export async function generateImages(generationId, markdown, options) {
     headers: { ...headers, 'Content-Type': 'application/json' },
     body: JSON.stringify({ generationId, markdown, ...options }),
   })
-  if (!res.ok) throw new Error((await res.json()).error)
-  return res.json()
+  if (!res.ok) await handleError(res)
+  return res.json()  // { images, credits }
 }
 
 // 생성 이력 조회
 export async function getGenerations() {
   const headers = await getAuthHeader()
   const res = await fetch(`${API_URL}/api/generations`, { headers })
-  if (!res.ok) throw new Error((await res.json()).error)
+  if (!res.ok) await handleError(res)
   return res.json()
 }
 
@@ -116,7 +78,7 @@ export async function getGenerations() {
 export async function getGeneration(id) {
   const headers = await getAuthHeader()
   const res = await fetch(`${API_URL}/api/generations/${id}`, { headers })
-  if (!res.ok) throw new Error((await res.json()).error)
+  if (!res.ok) await handleError(res)
   return res.json()
 }
 
@@ -125,7 +87,7 @@ export async function getGeneration(id) {
 export async function getStyles() {
   const headers = await getAuthHeader()
   const res = await fetch(`${API_URL}/api/generate/styles`, { headers })
-  if (!res.ok) throw new Error((await res.json()).error)
+  if (!res.ok) await handleError(res)
   return res.json()
 }
 
@@ -136,7 +98,7 @@ export async function analyzeStyle(exampleText) {
     headers: { ...headers, 'Content-Type': 'application/json' },
     body: JSON.stringify({ exampleText }),
   })
-  if (!res.ok) throw new Error((await res.json()).error)
+  if (!res.ok) await handleError(res)
   return res.json()
 }
 
@@ -145,7 +107,7 @@ export async function deleteStyle(id) {
   const res = await fetch(`${API_URL}/api/generate/style/${id}`, {
     method: 'DELETE', headers,
   })
-  if (!res.ok) throw new Error((await res.json()).error)
+  if (!res.ok) await handleError(res)
   return res.json()
 }
 
@@ -154,7 +116,7 @@ export async function deleteStyle(id) {
 export async function getProfiles() {
   const headers = await getAuthHeader()
   const res = await fetch(`${API_URL}/api/profiles`, { headers })
-  if (!res.ok) throw new Error((await res.json()).error)
+  if (!res.ok) await handleError(res)
   return res.json()
 }
 
@@ -165,7 +127,7 @@ export async function createProfile(name) {
     headers: { ...headers, 'Content-Type': 'application/json' },
     body: JSON.stringify({ name }),
   })
-  if (!res.ok) throw new Error((await res.json()).error)
+  if (!res.ok) await handleError(res)
   return res.json()
 }
 
@@ -176,7 +138,7 @@ export async function updateProfile(id, name) {
     headers: { ...headers, 'Content-Type': 'application/json' },
     body: JSON.stringify({ name }),
   })
-  if (!res.ok) throw new Error((await res.json()).error)
+  if (!res.ok) await handleError(res)
   return res.json()
 }
 
@@ -185,7 +147,7 @@ export async function deleteProfile(id) {
   const res = await fetch(`${API_URL}/api/profiles/${id}`, {
     method: 'DELETE', headers,
   })
-  if (!res.ok) throw new Error((await res.json()).error)
+  if (!res.ok) await handleError(res)
   return res.json()
 }
 
@@ -198,7 +160,7 @@ export async function createHashtagGroup(profileId, { name, naverTags, instagram
     headers: { ...headers, 'Content-Type': 'application/json' },
     body: JSON.stringify({ name, naverTags, instagramTags }),
   })
-  if (!res.ok) throw new Error((await res.json()).error)
+  if (!res.ok) await handleError(res)
   return res.json()
 }
 
@@ -209,7 +171,7 @@ export async function updateHashtagGroup(groupId, { name, naverTags, instagramTa
     headers: { ...headers, 'Content-Type': 'application/json' },
     body: JSON.stringify({ name, naverTags, instagramTags }),
   })
-  if (!res.ok) throw new Error((await res.json()).error)
+  if (!res.ok) await handleError(res)
   return res.json()
 }
 
@@ -218,7 +180,7 @@ export async function deleteHashtagGroup(groupId) {
   const res = await fetch(`${API_URL}/api/profiles/hashtag-groups/${groupId}`, {
     method: 'DELETE', headers,
   })
-  if (!res.ok) throw new Error((await res.json()).error)
+  if (!res.ok) await handleError(res)
   return res.json()
 }
 
@@ -231,7 +193,7 @@ export async function createSignature(profileId, { name, htmlContent }) {
     headers: { ...headers, 'Content-Type': 'application/json' },
     body: JSON.stringify({ name, htmlContent }),
   })
-  if (!res.ok) throw new Error((await res.json()).error)
+  if (!res.ok) await handleError(res)
   return res.json()
 }
 
@@ -242,7 +204,7 @@ export async function updateSignature(sigId, { name, htmlContent }) {
     headers: { ...headers, 'Content-Type': 'application/json' },
     body: JSON.stringify({ name, htmlContent }),
   })
-  if (!res.ok) throw new Error((await res.json()).error)
+  if (!res.ok) await handleError(res)
   return res.json()
 }
 
@@ -251,7 +213,7 @@ export async function deleteSignature(sigId) {
   const res = await fetch(`${API_URL}/api/profiles/signatures/${sigId}`, {
     method: 'DELETE', headers,
   })
-  if (!res.ok) throw new Error((await res.json()).error)
+  if (!res.ok) await handleError(res)
   return res.json()
 }
 
@@ -271,17 +233,17 @@ export async function generateCardImage({ prompt, count, size, quality, scene, k
 
   const res = await fetch(`${API_URL}/api/imagegen/generate`, {
     method: 'POST',
-    headers, // Content-Type은 FormData가 자동 설정
+    headers,
     body: formData,
   })
-  if (!res.ok) throw new Error((await res.json()).error)
+  if (!res.ok) await handleError(res)
   return res.json()
 }
 
 export async function getStyleImage() {
   const headers = await getAuthHeader()
   const res = await fetch(`${API_URL}/api/imagegen/style-image`, { headers })
-  if (!res.ok) throw new Error((await res.json()).error)
+  if (!res.ok) await handleError(res)
   return res.json()
 }
 
@@ -294,7 +256,7 @@ export async function uploadStyleImage(file) {
     headers,
     body: formData,
   })
-  if (!res.ok) throw new Error((await res.json()).error)
+  if (!res.ok) await handleError(res)
   return res.json()
 }
 
@@ -305,21 +267,21 @@ export async function generateCardHashtags(scene, korText) {
     headers: { ...headers, 'Content-Type': 'application/json' },
     body: JSON.stringify({ scene, korText }),
   })
-  if (!res.ok) throw new Error((await res.json()).error)
+  if (!res.ok) await handleError(res)
   return res.json()
 }
 
 export async function getImageGenHistory() {
   const headers = await getAuthHeader()
   const res = await fetch(`${API_URL}/api/imagegen/history`, { headers })
-  if (!res.ok) throw new Error((await res.json()).error)
+  if (!res.ok) await handleError(res)
   return res.json()
 }
 
 export async function deleteImageGenHistory(id) {
   const headers = await getAuthHeader()
   const res = await fetch(`${API_URL}/api/imagegen/history/${id}`, { method: 'DELETE', headers })
-  if (!res.ok) throw new Error((await res.json()).error)
+  if (!res.ok) await handleError(res)
   return res.json()
 }
 
@@ -327,47 +289,15 @@ export async function deleteImageGenHistory(id) {
 export async function getAllImages() {
   const headers = await getAuthHeader()
   const res = await fetch(`${API_URL}/api/generations/images/all`, { headers })
-  if (!res.ok) throw new Error((await res.json()).error)
+  if (!res.ok) await handleError(res)
   return res.json()
 }
 
-// ─── 플랜 / 크레딧 ────────────────────────────────────
+// ─── 크레딧 ───────────────────────────────────────────
 
-export async function getMyPlan() {
+export async function getCredits() {
   const headers = await getAuthHeader()
-  const res = await fetch(`${API_URL}/api/profiles/plan`, { headers })
-  if (!res.ok) throw new Error((await res.json()).error)
-  return res.json()
+  const res = await fetch(`${API_URL}/api/credits`, { headers })
+  if (!res.ok) await handleError(res)
+  return res.json()  // { credits: number }
 }
-
-// ─── 관리자 ───────────────────────────────────────────
-
-export async function adminGetUsers() {
-  const headers = await getAuthHeader()
-  const res = await fetch(`${API_URL}/api/profiles/admin/users`, { headers })
-  if (!res.ok) throw new Error((await res.json()).error)
-  return res.json()
-}
-
-export async function adminGrantCredits(email, amount) {
-  const headers = await getAuthHeader()
-  const res = await fetch(`${API_URL}/api/profiles/admin/credits`, {
-    method: 'POST',
-    headers: { ...headers, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, amount }),
-  })
-  if (!res.ok) throw new Error((await res.json()).error)
-  return res.json()
-}
-
-export async function adminUpdateUser(userId, updates) {
-  const headers = await getAuthHeader()
-  const res = await fetch(`${API_URL}/api/profiles/admin/users/${userId}`, {
-    method: 'PATCH',
-    headers: { ...headers, 'Content-Type': 'application/json' },
-    body: JSON.stringify(updates),
-  })
-  if (!res.ok) throw new Error((await res.json()).error)
-  return res.json()
-}
-

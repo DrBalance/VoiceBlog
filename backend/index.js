@@ -8,6 +8,7 @@ const imagesRouter = require('./routes/images');
 const generationsRouter = require('./routes/generations');
 const profilesRouter = require('./routes/profiles');
 const imageGenRouter = require('./routes/imageGen');
+const creditsRouter = require('./routes/creditsRouter');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -44,6 +45,7 @@ app.use('/api/generate', imagesRouter);
 app.use('/api/generations', generationsRouter);
 app.use('/api/profiles', profilesRouter);
 app.use('/api/imagegen', imageGenRouter);
+app.use('/api/credits', creditsRouter);
 
 // 에러 핸들러
 app.use((err, req, res, next) => {
@@ -55,7 +57,4 @@ app.use((err, req, res, next) => {
 
 app.listen(PORT, () => {
   console.log(`Voice Blog 서버 실행 중: http://localhost:${PORT}`);
-}).on('connection', (socket) => {
-  // SSE 스트리밍을 위해 5분 타임아웃
-  socket.setTimeout(300000);
 });

@@ -1,48 +1,44 @@
+// routes/generate.js  (크레딧 차감 적용 버전)
 const express = require('express');
 const { authMiddleware, supabase } = require('../middleware/auth');
-const { generateBlogPostStream, generateHashtags, analyzeStyle } = require('../services/claude');
-const { generateImages } = require('../services/dalle');
-const { searchImages } = require('../services/unsplash');
-const fetch = require('node-fetch');
+const { generateBlogPost, generateHashtags, analyzeStyle } = require('../services/claude');
+const { deductCredits, getBalance } = require('../middleware/credits');
 
 const router = express.Router();
 
-// base64 data URL → Buffer 변환
-function base64ToBuffer(dataUrl) {
-  const base64 = dataUrl.replace(/^data:image\/\w+;base64,/, '');
-  return Buffer.from(base64, 'base64');
-}
-
-// SSE 헬퍼
-function sseWrite(res, event, data) {
-  res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
-}
-
-// POST /api/generate/blog — SSE 스트리밍
+// POST /api/generate/blog
 router.post('/blog', authMiddleware, async (req, res, next) => {
   const {
-    transcript, tone = 'informative', imageCount = 3,
-    imageSource = 'dalle', customStyleId, contentLength = 'normal',
-    useWebSearch = false, prevMarkdown,
+    transcript,
+    tone = 'informative',
+    imageCount = 3,
+    imageSource = 'dalle',
+    customStyleId,
+    contentLength = 'normal',
+    useWebSearch = false,
+    prevMarkdown,
   } = req.body;
 
   if (!transcript || transcript.trim().length < 10) {
     return res.status(400).json({ error: '글감 텍스트가 너무 짧습니다.' });
   }
 
-  // SSE 헤더 설정
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
-  res.setHeader('X-Accel-Buffering', 'no'); // nginx 버퍼링 비활성화
-  res.flushHeaders();
-
-  // 연결 종료 감지
-  let clientGone = false;
-  req.on('close', () => { clientGone = true; });
-
   try {
-    // 플랜 체크
+    // ── 크레딧 계산 ──────────────────────────────────────────
+    // 블로그 1 크레딧 + 웹 검색 옵션 1 크레딧
+    const creditCost = 1 + (useWebSearch ? 1 : 0);
+
+    const balance = await getBalance(req.user.id);
+    if (balance < creditCost) {
+      return res.status(402).json({
+        error: `크레딧이 부족합니다. (필요: ${creditCost}, 잔여: ${balance})`,
+        code: 'INSUFFICIENT_CREDITS',
+        balance,
+        required: creditCost,
+      });
+    }
+
+    // ── 플랜 체크 (기존 월별 한도 유지) ─────────────────────
     const { data: plan } = await supabase
       .from('user_plans')
       .select('*')
@@ -50,11 +46,14 @@ router.post('/blog', authMiddleware, async (req, res, next) => {
       .single();
 
     if (plan && plan.generations_used >= plan.generations_limit) {
-      sseWrite(res, 'error', { error: '이번 달 생성 한도를 초과했습니다.' });
-      return res.end();
+      return res.status(403).json({
+        error: '이번 달 생성 한도를 초과했습니다.',
+        plan: plan.plan,
+        limit: plan.generations_limit,
+      });
     }
 
-    // 커스텀 스타일 조회
+    // ── 커스텀 스타일 조회 ───────────────────────────────────
     let customSystemPrompt = null;
     if (customStyleId) {
       const { data: styleData } = await supabase
@@ -66,28 +65,34 @@ router.post('/blog', authMiddleware, async (req, res, next) => {
       if (styleData) customSystemPrompt = styleData.system_prompt;
     }
 
-    // ── Phase 1: 블로그 글 스트리밍 생성 ──────────────────
-    sseWrite(res, 'progress', { phase: 'blog', status: 'generating' });
+    // ── 블로그 생성 ──────────────────────────────────────────
+    const [markdown, hashtags] = await Promise.all([
+      generateBlogPost(transcript, {
+        tone, imageCount, imageSource, contentLength,
+        useWebSearch, customSystemPrompt, prevMarkdown,
+      }),
+      generateHashtags(transcript),
+    ]);
 
-    let markdown = '';
-    const sendChunk = (chunk) => {
-      if (clientGone) return;
-      sseWrite(res, 'blog_chunk', { text: chunk });
-    };
-
-    // 해시태그는 글 완성 후 생성 — 병렬 불가(마크다운 필요)
-    markdown = await generateBlogPostStream(
-      transcript,
-      { tone, imageCount, imageSource, contentLength, useWebSearch, customSystemPrompt, prevMarkdown },
-      sendChunk,
+    // ── 크레딧 차감 (생성 성공 후) ───────────────────────────
+    const { ok, balance: newBalance } = await deductCredits(
+      req.user.id,
+      creditCost,
+      useWebSearch ? 'blog_generate+web_search' : 'blog_generate',
     );
 
-    if (clientGone) return res.end();
+    if (!ok) {
+      // 극히 드문 레이스 컨디션 케이스
+      return res.status(402).json({
+        error: '크레딧이 부족합니다.',
+        code: 'INSUFFICIENT_CREDITS',
+        balance: 0,
+        required: creditCost,
+      });
+    }
 
-    sseWrite(res, 'progress', { phase: 'blog', status: 'done' });
-
-    // 생성 이력 저장
-    const { data: generation, error: genError } = await supabase
+    // ── 생성 이력 저장 ───────────────────────────────────────
+    const { data: generation, error } = await supabase
       .from('generations')
       .insert({
         user_id: req.user.id,
@@ -100,108 +105,24 @@ router.post('/blog', authMiddleware, async (req, res, next) => {
       .select()
       .single();
 
-    if (genError) throw genError;
+    if (error) throw error;
 
-    // 사용량 업데이트
+    // 월별 사용량 업데이트
     await supabase
       .from('user_plans')
-      .upsert({ user_id: req.user.id, generations_used: (plan?.generations_used || 0) + 1 });
+      .upsert({
+        user_id: req.user.id,
+        generations_used: (plan?.generations_used || 0) + 1,
+      });
 
-    // 해시태그 생성 (non-streaming, 빠름) — 인스타 5개 제한
-    const rawHashtags = await generateHashtags(markdown)
-    const hashtags = {
-      naver: rawHashtags.naver || [],
-      instagram: (rawHashtags.instagram || []).slice(0, 5),
-    };
-
-    // ── Phase 2: 이미지 생성 (1장씩 순차, SSE 진행 이벤트) ──
-    let uploadedImages = [];
-
-    if (imageCount > 0) {
-      sseWrite(res, 'progress', { phase: 'image', status: 'generating', current: 0, total: imageCount });
-
-      // 이미지 1장씩 생성 & 업로드 후 SSE 전송
-      let rawImages = [];
-      if (imageSource === 'dalle') {
-        rawImages = await generateImages(markdown, imageCount);
-      } else {
-        rawImages = await searchImages(markdown, imageCount);
-      }
-
-      for (const img of rawImages) {
-        if (clientGone) break;
-        if (!img.url) {
-          uploadedImages.push(img);
-          continue;
-        }
-
-        try {
-          let buffer;
-          const storagePath = `generations/${req.user.id}/${generation.id}/${img.index}.jpg`;
-
-          if (img.url.startsWith('data:')) {
-            buffer = base64ToBuffer(img.url);
-          } else {
-            const response = await fetch(img.url);
-            buffer = await response.buffer();
-          }
-
-          const { error: uploadError } = await supabase.storage
-            .from('blog-images')
-            .upload(storagePath, buffer, { contentType: 'image/jpeg', upsert: true });
-
-          if (uploadError) throw uploadError;
-
-          const { data: publicUrlData } = supabase.storage
-            .from('blog-images')
-            .getPublicUrl(storagePath);
-
-          const permanentUrl = publicUrlData.publicUrl;
-          const uploaded = { ...img, storagePath, permanentUrl, url: permanentUrl };
-          uploadedImages.push(uploaded);
-
-          // 1장 완료 → SSE 이벤트
-          sseWrite(res, 'progress', {
-            phase: 'image',
-            status: 'progress',
-            current: uploadedImages.length,
-            total: imageCount,
-            url: permanentUrl,
-            index: img.index,
-          });
-        } catch (err) {
-          console.error(`이미지 ${img.index} 업로드 오류:`, err.message);
-          uploadedImages.push(img);
-          sseWrite(res, 'progress', {
-            phase: 'image', status: 'progress',
-            current: uploadedImages.length, total: imageCount,
-          });
-        }
-      }
-
-      // storage_path DB 업데이트
-      await supabase
-        .from('generations')
-        .update({ storage_path: `generations/${req.user.id}/${generation.id}` })
-        .eq('id', generation.id)
-        .eq('user_id', req.user.id);
-    }
-
-    // ── 완료 이벤트 ───────────────────────────────────────
-    sseWrite(res, 'done', {
+    res.json({
       generationId: generation.id,
       markdown,
       hashtags,
-      images: uploadedImages,
+      credits: newBalance,   // 프론트엔드가 바로 갱신할 수 있도록 반환
     });
-
-    res.end();
   } catch (err) {
-    console.error('[SSE /blog error]', err);
-    if (!clientGone) {
-      sseWrite(res, 'error', { error: err.message || '서버 오류가 발생했습니다.' });
-    }
-    res.end();
+    next(err);
   }
 });
 
@@ -214,19 +135,18 @@ router.post('/style', authMiddleware, async (req, res, next) => {
   }
 
   try {
-    // 기존 스타일 수 확인 (최대 4개)
     const { data: existing, error: countError } = await supabase
       .from('user_styles')
       .select('id')
       .eq('user_id', req.user.id);
 
     if (countError) throw countError;
-
     if (existing && existing.length >= 4) {
-      return res.status(400).json({ error: '커스텀 스타일은 최대 4개까지 만들 수 있습니다. 기존 스타일을 삭제 후 다시 시도해주세요.' });
+      return res.status(400).json({
+        error: '커스텀 스타일은 최대 4개까지 만들 수 있습니다. 기존 스타일을 삭제 후 다시 시도해주세요.',
+      });
     }
 
-    // HTML 태그 제거 및 공백 정리
     exampleText = exampleText
       .replace(/<[^>]+>/g, ' ')
       .replace(/&[a-z]+;/gi, ' ')
@@ -234,10 +154,8 @@ router.post('/style', authMiddleware, async (req, res, next) => {
       .trim()
       .slice(0, 1000);
 
-    // Claude로 스타일 분석
     const { name, description, systemPrompt } = await analyzeStyle(exampleText);
 
-    // Supabase 저장
     const { data: style, error } = await supabase
       .from('user_styles')
       .insert({ user_id: req.user.id, name, description, system_prompt: systemPrompt })
@@ -245,14 +163,13 @@ router.post('/style', authMiddleware, async (req, res, next) => {
       .single();
 
     if (error) throw error;
-
     res.json({ style });
   } catch (err) {
     next(err);
   }
 });
 
-// DELETE /api/generate/style/:id — 커스텀 스타일 삭제
+// DELETE /api/generate/style/:id
 router.delete('/style/:id', authMiddleware, async (req, res, next) => {
   try {
     const { error } = await supabase
@@ -268,7 +185,7 @@ router.delete('/style/:id', authMiddleware, async (req, res, next) => {
   }
 });
 
-// GET /api/generate/styles — 커스텀 스타일 목록 조회
+// GET /api/generate/styles
 router.get('/styles', authMiddleware, async (req, res, next) => {
   try {
     const { data, error } = await supabase
