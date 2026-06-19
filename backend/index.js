@@ -9,6 +9,7 @@ const generationsRouter = require('./routes/generations');
 const profilesRouter = require('./routes/profiles');
 const imageGenRouter = require('./routes/imageGen');
 const creditsRouter = require('./routes/creditsRoute');
+const adminRouter  = require('./routes/adminRouter');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -46,6 +47,7 @@ app.use('/api/generations', generationsRouter);
 app.use('/api/profiles', profilesRouter);
 app.use('/api/imagegen', imageGenRouter);
 app.use('/api/credits', creditsRouter);
+app.use('/api/admin',   adminRouter);
 
 // 에러 핸들러
 app.use((err, req, res, next) => {
