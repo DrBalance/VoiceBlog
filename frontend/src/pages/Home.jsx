@@ -82,14 +82,15 @@ function ProgressBar({ phase, blogProgress, imageProgress, imageTotal, liveText 
       ? imageTotal > 0 ? Math.round((imageProgress / imageTotal) * 100) : 0
       : 40  // stt
 
+  const [transitioning, setTransitioning] = useState(false)
+
   useEffect(() => {
     if (phase !== prevPhase) {
-      // 단계 바뀌면 먼저 100으로 올린 뒤 0.35초 후 새 단계 시작
       setDisplayPct(100)
       const t = setTimeout(() => {
-        setPrevPhase(phase)
         setDisplayPct(0)
-      }, 350)
+        setPrevPhase(phase)
+      }, 400)
       return () => clearTimeout(t)
     } else {
       setDisplayPct(targetPct)
@@ -116,7 +117,7 @@ function ProgressBar({ phase, blogProgress, imageProgress, imageTotal, liveText 
         <div style={styles.progressBarWrap}>
           <div style={{
             ...styles.progressBarFill(displayPct),
-            transition: 'width 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+            transition: displayPct === 0 ? 'none' : 'width 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
           }} />
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px' }}>
