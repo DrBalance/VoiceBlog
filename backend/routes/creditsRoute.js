@@ -36,4 +36,35 @@ router.get('/log', authMiddleware, async (req, res, next) => {
   }
 });
 
+// GET /api/credits/plan — 플랜 + 크레딧 통합 조회 (Settings 페이지용)
+router.get('/plan', authMiddleware, async (req, res, next) => {
+  try {
+    const [creditBalance, planData] = await Promise.all([
+      getBalance(req.user.id),
+      supabase
+        .from('user_plans')
+        .select('plan, generations_used, generations_limit')
+        .eq('user_id', req.user.id)
+        .single(),
+    ]);
+
+    // 총 사용 크레딧
+    const { data: usageData } = await supabase
+      .from('user_credits')
+      .select('total_used')
+      .eq('user_id', req.user.id)
+      .single();
+
+    res.json({
+      plan: planData.data?.plan || 'free',
+      credits: creditBalance,
+      totalCreditsUsed: usageData?.total_used || 0,
+      generationsUsed: planData.data?.generations_used || 0,
+      generationsLimit: planData.data?.generations_limit || 30,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 module.exports = router;

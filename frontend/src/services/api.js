@@ -293,6 +293,16 @@ export async function getAllImages() {
   return res.json()
 }
 
+// ─── 플랜 + 크레딧 통합 조회 ─────────────────────────
+
+export async function getMyPlan() {
+  const headers = await getAuthHeader()
+  const res = await fetch(`${API_URL}/api/credits/plan`, { headers })
+  if (!res.ok) await handleError(res)
+  return res.json()
+  // { plan, credits, totalCreditsUsed, generationsUsed, generationsLimit }
+}
+
 // ─── 크레딧 ───────────────────────────────────────────
 
 export async function getCredits() {
