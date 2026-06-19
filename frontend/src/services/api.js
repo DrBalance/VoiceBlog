@@ -311,3 +311,34 @@ export async function getCredits() {
   if (!res.ok) await handleError(res)
   return res.json()  // { credits: number }
 }
+
+// ─── 관리자 ───────────────────────────────────────────
+
+export async function adminGetUsers() {
+  const headers = await getAuthHeader()
+  const res = await fetch(`${API_URL}/api/admin/users`, { headers })
+  if (!res.ok) await handleError(res)
+  return res.json()
+}
+
+export async function adminGrantCredits(email, amount) {
+  const headers = await getAuthHeader()
+  const res = await fetch(`${API_URL}/api/admin/grant-credits`, {
+    method: 'POST',
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, amount }),
+  })
+  if (!res.ok) await handleError(res)
+  return res.json()
+}
+
+export async function adminUpdateUser(userId, values) {
+  const headers = await getAuthHeader()
+  const res = await fetch(`${API_URL}/api/admin/users/${userId}`, {
+    method: 'PATCH',
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify(values),
+  })
+  if (!res.ok) await handleError(res)
+  return res.json()
+}

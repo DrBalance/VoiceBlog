@@ -9,6 +9,8 @@ import Login from './pages/Login'
 import History from './pages/History'
 import Settings from './pages/Settings'
 import ImageGen from './pages/ImageGen'
+import Admin from './pages/Admin'
+import Manual from './pages/Manual'
 
 const API_URL = import.meta.env.VITE_API_URL
 const OWNER_EMAIL = 'drbalance@naver.com'
@@ -137,6 +139,14 @@ export default function App() {
               카드이미지
             </Link>
           )}
+          {isOwner && (
+            <Link to="/admin" style={{ ...styles.navLink(location.pathname === '/admin'), textDecoration: 'none' }}>
+              관리자
+            </Link>
+          )}
+          <Link to="/manual" style={{ ...styles.navLink(location.pathname === '/manual'), textDecoration: 'none' }}>
+            사용법
+          </Link>
 
           {/* 크레딧 배지 */}
           <CreditBadge credits={credits} />
@@ -152,6 +162,8 @@ export default function App() {
           <Route path="/history" element={<History />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/imagegen" element={<ImageGen />} />
+          <Route path="/admin" element={<Admin />} />
+          <Route path="/manual" element={<Manual />} />
         </Routes>
       </main>
     </CreditContext.Provider>
